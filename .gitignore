@@ -24,3 +24,4 @@ kidslock-debug.apk
 
 # APK 发布版走 GitHub Releases，不入源码仓库
 *.apk
+*.apk.idsig
