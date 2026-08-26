@@ -27,6 +27,9 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:icon="@mipmap/ic_launcher"
+            android:banner="@drawable/tv_banner"
+            android:label="@string/app_name"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <!-- 同时声明 LAUNCHER + LEANBACK_LAUNCHER，兼容手机和 Android TV / 小米电视桌面 -->
             <intent-filter>
