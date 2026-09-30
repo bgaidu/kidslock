@@ -37,6 +37,13 @@ jobs:
       - name: Decode keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/kidslock-release.jks
+      - name: List keystore aliases (debug)
+        run: |
+          keytool -list -keystore $RUNNER_TEMP/kidslock-release.jks -storepass "${{ secrets.KEYSTORE_PASSWORD }}"
+
+
+
+
 
       - name: Build Release APK
         env:
