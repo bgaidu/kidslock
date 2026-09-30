@@ -137,21 +137,22 @@ apksigner sign --ks <你的.keystore> --out kidslock-release.apk aligned.apk
 
 ### Bug 修复
 
-1. **解锁指令永不执行**：`ACTION_UNLOCK` 原来写在已废弃的 `Service.onStart()` 里（Android 2.0 起系统不再回调），`unlockAndStop()` 是死代码——之前解锁全靠 watchdog 轮询发现状态变化才停服务。已移到 `onStartCommand()` 处理，解锁后悬浮窗立即移除、服务立即停止。
-2. **计时依赖墙钟，改系统时间可绕过**：原实现用 `System.currentTimeMillis()` 算到期时间，把时间往后调即可无限续时。现改为**亮屏计时**（详见上文"计时与防绕过"）：`elapsedRealtime` 单调递减 + 熄屏暂停 + uptime 差值对账 + 跨重启 UsageStats 补扣，改时间、杀后台、强停重启三条路全部堵死。
-3. **前台判断失真**：`getRunningTasks` 自 Android 5.1 起只返回调用者自己的任务，"锁屏是否在前台"的判断一直不准，导致 watchdog 反复做无效的 `startActivity`。改为 `LockScreenActivity` 用同进程静态引用上报自己的存活/前台状态。
-4. **PIN 明文存储**：SharedPreferences 里直接存明文 PIN。改为随机盐 + SHA-256 哈希存储；旧版明文在首次校验成功时自动升级为哈希（按"长度非 64 位"识别明文，兼容旧版可能设置过的非数字 PIN）。
-5. **PIN 存储损坏可导致永久锁死**：`sha256Hex()` 原实现 `catch (Exception) { return ""; }`——一旦哈希异常，空串被当成"已设置的 PIN"写入，之后任何输入都校验失败，孩子只能恢复出厂。现改为 `NoSuchAlgorithmException` 显式抛出（SHA-256 在 Android 上不会失败，但异常不该变成静默锁死）；`verifyPin()` 增加格式判定分支，长度非 64 且非 4 位数字的值视为"存储已损坏"直接拒绝匹配；`isPinUsable()` 供设置页判断能否走"重新设置PIN"恢复。
-6. **设置页"立即解锁"按钮无 PIN 校验**：`MainActivity` 的解锁按钮直接 `setLocked(false)`。`onCreate` 的重定向挡住了锁屏状态下的进入，但边界情况可绕过——MainActivity 已打开期间若计时到期（`LockService.triggerLock()` 把 `isLocked` 置真），此时按一次"立即解锁"即完成绕过。已删除该按钮（解锁只应发生在锁屏界面，走认字或 PIN 两条路径）。
+1. **解锁指令永不执行**（2026-09-30）：`ACTION_UNLOCK` 原来写在已废弃的 `Service.onStart()` 里（Android 2.0 起系统不再回调），`unlockAndStop()` 是死代码——之前解锁全靠 watchdog 轮询发现状态变化才停服务。已移到 `onStartCommand()` 处理，解锁后悬浮窗立即移除、服务立即停止。
+2. **计时依赖墙钟，改系统时间可绕过**（2026-09-30）：原实现用 `System.currentTimeMillis()` 算到期时间，把时间往后调即可无限续时。现改为**亮屏计时**（详见上文"计时与防绕过"）：`elapsedRealtime` 单调递减 + 熄屏暂停 + uptime 差值对账 + 跨重启 UsageStats 补扣，改时间、杀后台、强停重启三条路全部堵死。
+3. **前台判断失真**（2026-09-30）：`getRunningTasks` 自 Android 5.1 起只返回调用者自己的任务，"锁屏是否在前台"的判断一直不准，导致 watchdog 反复做无效的 `startActivity`。改为 `LockScreenActivity` 用同进程静态引用上报自己的存活/前台状态。
+4. **PIN 明文存储**（2026-09-30）：SharedPreferences 里直接存明文 PIN。改为随机盐 + SHA-256 哈希存储；旧版明文在首次校验成功时自动升级为哈希（按"长度非 64 位"识别明文，兼容旧版可能设置过的非数字 PIN）。
+5. **PIN 存储损坏可导致永久锁死**（2026-09-30）：`sha256Hex()` 原实现 `catch (Exception) { return ""; }`——一旦哈希异常，空串被当成"已设置的 PIN"写入，之后任何输入都校验失败，孩子只能恢复出厂。现改为 `NoSuchAlgorithmException` 显式抛出（SHA-256 在 Android 上不会失败，但异常不该变成静默锁死）；`verifyPin()` 增加格式判定分支，长度非 64 且非 4 位数字的值视为"存储已损坏"直接拒绝匹配；`isPinUsable()` 供设置页判断能否走"重新设置PIN"恢复。
+6. **设置页"立即解锁"按钮无 PIN 校验**（2026-09-30）：`MainActivity` 的解锁按钮直接 `setLocked(false)`。`onCreate` 的重定向挡住了锁屏状态下的进入，但边界情况可绕过——MainActivity 已打开期间若计时到期（`LockService.triggerLock()` 把 `isLocked` 置真），此时按一次"立即解锁"即完成绕过。已删除该按钮（解锁只应发生在锁屏界面，走认字或 PIN 两条路径）。
+7. **`StandardCharsets.UTF_8` 拼写错误导致编译失败**（2026-09-30）：`sha256Hex()` 里 `StandardCharsets.UTF-8`（连字符）被 Java 解析为 `UTF` 减 `8`，编译报"找不到符号"。Java 常量名用下划线：`UTF_8`。已在 commit `b05b06c` 修正。
 
 ### 小清理
 
-- 设置 PIN 弹窗原来只校验长度为 4，现校验必须是 4 位数字
-- 删除从未使用的 `QUERY_ALL_PACKAGES` 权限（利于应用商店审核）
-- 删除空实现的 `onUserLeaveHint()`、全屏悬浮窗上无意义的 `FLAG_NOT_TOUCH_MODAL`、未使用的导入
-- 界面措辞"电视"统一为"设备"，平板使用不再违和
-- `CharacterBank` 干扰项兜底原为无限补 `"n/a"` 占位文本——占位不是任何字的读音，孩子可一眼识别并跳过，把 4 选 1 降成 3 选 1。现改为题库不足时抛出 `IllegalStateException`（题库 144 条 / 141 唯一拼音，远够 4 选 1，正常不触发；抛错好过静默降级）
-- `MainActivity.onResume()` 先 `removeCallbacks` 再 `post`，避免快速切回时堆叠多个 `updateRunnable`
-- PIN 校验中区分"密码错"与"系统错误"：旧版明文升级哈希失败时只记失败计数、不回写错误值，避免 SHA 异常被误计为一次密码错误而加速触发锁定
-- 设置 PIN 弹窗改为检查写入结果并给出成功/失败提示
-- `MainActivity` 删除已失效的"解锁"按钮后，同步清理 `strings.xml` 中未引用的 `btn_unlock`
+- 设置 PIN 弹窗原来只校验长度为 4，现校验必须是 4 位数字（2026-09-30）
+- 删除从未使用的 `QUERY_ALL_PACKAGES` 权限（利于应用商店审核）（2026-09-30）
+- 删除空实现的 `onUserLeaveHint()`、全屏悬浮窗上无意义的 `FLAG_NOT_TOUCH_MODAL`、未使用的导入（2026-09-30）
+- 界面措辞"电视"统一为"设备"，平板使用不再违和（2026-09-30）
+- `CharacterBank` 干扰项兜底原为无限补 `"n/a"` 占位文本——占位不是任何字的读音，孩子可一眼识别并跳过，把 4 选 1 降成 3 选 1。现改为题库不足时抛出 `IllegalStateException`（题库 144 条 / 141 唯一拼音，远够 4 选 1，正常不触发；抛错好过静默降级）（2026-09-30）
+- `MainActivity.onResume()` 先 `removeCallbacks` 再 `post`，避免快速切回时堆叠多个 `updateRunnable`（2026-09-30）
+- PIN 校验中区分"密码错"与"系统错误"：旧版明文升级哈希失败时只记失败计数、不回写错误值，避免 SHA 异常被误计为一次密码错误而加速触发锁定（2026-09-30）
+- 设置 PIN 弹窗改为检查写入结果并给出成功/失败提示（2026-09-30）
+- `MainActivity` 删除已失效的"解锁"按钮后，同步清理 `strings.xml` 中未引用的 `btn_unlock`（2026-09-30）
