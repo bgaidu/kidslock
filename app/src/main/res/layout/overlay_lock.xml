@@ -26,7 +26,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="32dp"
-            android:text="电视已锁定"
+            android:text="设备已锁定"
             android:textColor="@android:color/white"
             android:textSize="56sp"
             android:textStyle="bold" />

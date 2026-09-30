@@ -289,7 +289,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="计时开始后，到时自动锁屏\n重启电视后仍保持锁屏\n解锁需连续答对五年级水平汉字"
+            android:text="计时开始后，到时自动锁屏\n重启设备后仍保持锁屏\n解锁需连续答对五年级水平汉字"
             android:textColor="@color/text_secondary"
             android:textSize="@dimen/text_body"
             android:gravity="center"

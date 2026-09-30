@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">儿童锁屏</string>
-    <string name="app_description">儿童电视锁屏 · 认字解锁</string>
+    <string name="app_description">儿童锁屏 · 认字解锁</string>
 
     <!-- Lock Screen -->
     <string name="screen_locked">屏幕已锁定</string>
