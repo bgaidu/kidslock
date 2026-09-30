@@ -92,19 +92,6 @@
                 android:textColor="@color/btn_text"
                 android:focusable="true"
                 android:clickable="true" />
-
-            <Button
-                android:id="@+id/btnUnlock"
-                android:layout_width="wrap_content"
-                android:layout_height="@dimen/btn_height"
-                android:layout_margin="@dimen/btn_margin"
-                android:minWidth="@dimen/btn_min_width"
-                android:text="@string/btn_unlock"
-                android:textSize="@dimen/text_button"
-                android:background="@drawable/btn_settings_bg"
-                android:textColor="@color/btn_text"
-                android:focusable="true"
-                android:clickable="true" />
         </LinearLayout>
 
         <!-- ===== 参数配置 ===== -->

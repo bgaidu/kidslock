@@ -20,7 +20,6 @@
     <string name="btn_start_timer">开始计时</string>
     <string name="btn_stop_timer">停止计时</string>
     <string name="btn_lock_now">立即锁屏</string>
-    <string name="btn_unlock">解锁</string>
     <string name="btn_set_pin">设置家长PIN</string>
 
     <!-- Notification -->

@@ -65,6 +65,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // 先移除旧的，避免快速切回时重复 post 多个 Runnable
+        handler.removeCallbacks(updateRunnable);
         handler.post(updateRunnable);
     }
 
@@ -146,14 +148,6 @@ public class MainActivity extends AppCompatActivity {
             lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
             startActivity(lockIntent);
         });
-
-        // 立即解锁（如果在锁屏状态，从设置页解锁）
-        findViewById(R.id.btnUnlock).setOnClickListener(v -> {
-            pref.setLocked(false);
-            pref.setHomeAliasEnabled(this, false);
-            toast("已解锁");
-            updateStatus();
-        });
     }
 
     private void showPinDialog() {
@@ -168,11 +162,21 @@ public class MainActivity extends AppCompatActivity {
 
         builder.setPositiveButton("确定", (dialog, which) -> {
             String pin = input.getText().toString().trim();
-            if (pin.matches("\\d{4}")) {
-                pref.setParentPin(pin);
-                toast("PIN码已设置");
-            } else {
+            if (!pin.matches("\\d{4}")) {
                 toast("PIN码必须是4位数字");
+                return;
+            }
+            // setParentPin 在 SHA 异常时会抛 IllegalStateException——不吞掉，
+            // 但也不能让弹窗回调崩溃整个设置页。
+            try {
+                if (pref.setParentPin(pin)) {
+                    pref.resetPinFailures();
+                    toast("PIN码已设置");
+                } else {
+                    toast("PIN码设置失败，请重试");
+                }
+            } catch (RuntimeException e) {
+                toast("PIN码设置失败：" + e.getMessage());
             }
         });
         builder.setNegativeButton("取消", null);

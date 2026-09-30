@@ -70,6 +70,14 @@ public class LockScreenActivity extends AppCompatActivity {
         requiredCount = pref.getUnlockCount();
 
         // 窗口属性：全屏，保持显示
+        //
+        // 注意：FLAG_SHOW_WHEN_LOCKED 与 FLAG_DISMISS_KEYGUARD 自 API 27 起废弃。
+        // 在 Android 12+ 上它们不再可靠——若设备处于系统锁屏状态，锁屏界面可能无法弹出。
+        // 彻底解决需走 DevicePolicyManager.setKeyguardDisabled()，但那要求本应用被设为
+        // 设备所有者（Device Owner），会改变安装方式且启用后难以撤销，属于部署取舍
+        // 而非纯代码改动。当前保留这两个 flag：对未设系统锁屏的设备（多数家庭场景）仍有效。
+        // 目标设备若确实有系统锁屏，请先完成上文"安装后必做的权限设置"中的
+        // "锁屏/安全中心"相关项，或让设备不启用系统锁屏密码。
         getWindow().addFlags(
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                         | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED

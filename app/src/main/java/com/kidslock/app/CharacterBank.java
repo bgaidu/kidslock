@@ -193,13 +193,17 @@ public class CharacterBank {
 
     /**
      * 取干扰项：3个与正确拼音不同的选项。
+     * 题库不足时抛出，不补占位文本——占位文本（如 "n/a"）不是任何字的读音，
+     * 孩子一眼就能认出并跳过，把 4 选 1 降成 3 选 1，破坏解锁难度设计。
      */
     public List<String> getDistractors(String correctPinyin, int count) {
         Set<String> used = new HashSet<>();
         used.add(correctPinyin);
         List<String> result = new ArrayList<>();
+        // 尝试次数需要大于题库规模，否则随机采样可能一直撞重复而凑不齐
+        int maxAttempts = Math.max(200, BANK.length * 4);
         int attempts = 0;
-        while (result.size() < count && attempts < 100) {
+        while (result.size() < count && attempts < maxAttempts) {
             int idx = random.nextInt(BANK.length);
             String py = BANK[idx].pinyin;
             if (!used.contains(py)) {
@@ -208,9 +212,10 @@ public class CharacterBank {
             }
             attempts++;
         }
-        // 万一不够，补几个通用拼音
-        while (result.size() < count) {
-            result.add("n/a");
+        if (result.size() < count) {
+            throw new IllegalStateException(
+                    "题库可选拼音不足：" + (result.size() + 1) + " < " + (count + 1)
+                    + "，请扩充 CharacterBank 后再出题");
         }
         return result;
     }

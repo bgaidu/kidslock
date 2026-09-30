@@ -11,6 +11,7 @@ import android.os.SystemClock;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.HashMap;
 
@@ -132,6 +133,11 @@ public class PrefManager {
                 .apply();
     }
 
+    /**
+     * 停止计时，清零剩余时间与三枚时钟戳。
+     * 时间戳清零后 {@link #deductOfflineIfAny()} 不会再执行扣减，
+     * 这正是期望行为：下一次计时由 {@link #startTimer(int)} 重新设置全部时间戳。
+     */
     public void stopTimer() {
         prefs.edit()
                 .putBoolean(KEY_TIMER_ACTIVE, false)
@@ -223,25 +229,63 @@ public class PrefManager {
 
     // --- Parent PIN（随机盐 + SHA-256，不存明文） ---
 
-    /** 校验 PIN。兼容旧版明文存储：校验成功时顺手升级为哈希。 */
+    /**
+     * 校验 PIN，兼容三种存储格式：
+     * 空值 → 默认 1234；4 位数字 → 旧版明文（校验成功时升级）；
+     * 64 位十六进制 → 已迁移的哈希；其他 → 视为损坏（例如异常时误写入的空串）。
+     */
     public boolean verifyPin(String pin) {
         if (pin == null || pin.isEmpty()) return false;
         String stored = prefs.getString(KEY_PARENT_PIN, null);
         if (stored == null) return pin.equals(DEFAULT_PARENT_PIN);
-        if (stored.length() != 64) {   // 旧版明文（SHA-256 十六进制哈希固定 64 位）
+        if (stored.length() == 4 && stored.matches("\\d{4}")) {
+            // 旧版明文：校验成功时升级为哈希，避免下次再走明文分支
             if (stored.equals(pin)) {
-                setParentPin(pin);
+                // 校验成功即升级存储格式。升级失败不视为验证失败，
+                // 仅记录失败计数（下次仍可用明文校验），避免 SHA 异常被误计为密码错误。
+                try {
+                    setParentPin(pin);
+                    resetPinFailures();
+                } catch (RuntimeException e) {
+                    recordPinFailure();
+                }
                 return true;
             }
             return false;
         }
-        return stored.equals(sha256Hex(getOrCreateSalt() + "|" + pin));
+        if (stored.length() == 64) {
+            return stored.equals(sha256Hex(getOrCreateSalt() + "|" + pin));
+        }
+        // 存储已损坏：拒绝匹配任何输入。
+        // 家长可在 MainActivity 通过"重新设置PIN"覆盖此值来恢复，避免被永久锁死。
+        return false;
     }
 
-    public void setParentPin(String pin) {
+    /**
+     * 写入 PIN 的哈希。SHA-256 失败时抛出而非返回空串，
+     * 避免把错误值写成"看起来已设置"的状态导致 PIN 永久失效。
+     */
+    public boolean setParentPin(String pin) {
+        if (pin == null || pin.isEmpty()) return false;
+        String hash = sha256Hex(getOrCreateSalt() + "|" + pin);
+        if (hash.length() != 64) {
+            throw new IllegalStateException("sha256Hex 返回了非 64 位摘要");
+        }
         prefs.edit()
-                .putString(KEY_PARENT_PIN, sha256Hex(getOrCreateSalt() + "|" + pin))
+                .putString(KEY_PARENT_PIN, hash)
                 .apply();
+        return true;
+    }
+
+    /**
+     * 是否已有可用的 PIN（已设置且存储格式未损坏）。
+     * 损坏时 MainActivity 允许家长重新设置来恢复，避免被空串锁死。
+     */
+    public boolean isPinUsable() {
+        String stored = prefs.getString(KEY_PARENT_PIN, null);
+        if (stored == null) return true;                          // 未设置，默认 1234 可用
+        if (stored.length() == 4 && stored.matches("\\d{4}")) return true;  // 旧版明文可用
+        return stored.length() == 64;                             // 仅哈希可用
     }
 
     private String getOrCreateSalt() {
@@ -256,15 +300,17 @@ public class PrefManager {
     private static String sha256Hex(String s) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] d = md.digest(s.getBytes(StandardCharsets.UTF_8));
+            byte[] d = md.digest(s.getBytes(StandardCharsets.UTF-8));
             StringBuilder sb = new StringBuilder(d.length * 2);
             for (byte b : d) {
                 sb.append(Character.forDigit((b >> 4) & 0xF, 16));
                 sb.append(Character.forDigit(b & 0xF, 16));
             }
             return sb.toString();
-        } catch (Exception e) {
-            return "";
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 是 Android 标准算法，不可用时抛出而非返回空串——
+            // 空串会被当成"已设置的 PIN"写入，导致永久无法解锁。
+            throw new IllegalStateException("SHA-256 not available", e);
         }
     }
 
