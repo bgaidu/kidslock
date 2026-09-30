@@ -2,6 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
+// 签名配置来自 CI 环境变量（GitHub Actions Secrets），本地未设置时 release 不签名
+def keystoreFile = System.getenv("KEYSTORE_FILE")
+def keystorePass = System.getenv("KEYSTORE_PASSWORD")
+
 android {
     namespace 'com.kidslock.app'
     compileSdk 34
@@ -10,14 +14,26 @@ android {
         applicationId "com.kidslock.app"
         minSdk 21
         targetSdk 33
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1"
+    }
+
+    signingConfigs {
+        if (keystoreFile) {
+            release {
+                storeFile file(keystoreFile)
+                storePassword keystorePass
+                keyAlias 'kidslock'
+                keyPassword keystorePass
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (keystoreFile) signingConfig signingConfigs.release
         }
     }
 
