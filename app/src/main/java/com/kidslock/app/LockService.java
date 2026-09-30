@@ -1,20 +1,21 @@
 package com.kidslock.app;
 
-import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.ComponentName;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.PixelFormat;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
@@ -26,8 +27,6 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 
 import androidx.core.app.NotificationCompat;
-
-import java.util.List;
 
 /**
  * 前台服务，三种工作：
@@ -44,6 +43,13 @@ public class LockService extends Service {
     private static final String TAG = "LockService";
     private static final String CHANNEL_ID = "kids_lock_timer";
     private static final int NOTIFICATION_ID = 1001;
+    private static final String ACTION_UNLOCK = "com.kidslock.app.ACTION_UNLOCK";
+
+    // 计时状态（内存权威值，运行期间基于 elapsedRealtime，不受改系统时间影响）
+    private long remainingMillis;
+    private long lastTickElapsed;
+    private int persistCountdown;
+    private static final int PERSIST_EVERY_TICKS = 5;   // 每 5 秒持久化一次
 
     private PrefManager pref;
     private Handler handler;
@@ -53,19 +59,56 @@ public class LockService extends Service {
     private WindowManager windowManager;
     private View overlayView;
 
+    // 亮屏状态：只在亮屏期间递减剩余时间（熄屏即暂停）
+    private PowerManager powerManager;
+    private boolean screenOn = true;
+    private BroadcastReceiver screenReceiver;
+
     @Override
     public void onCreate() {
         super.onCreate();
         pref = new PrefManager(this);
         handler = new Handler(Looper.getMainLooper());
         windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        screenOn = powerManager != null && powerManager.isInteractive();
+        registerScreenListener();
         createNotificationChannel();
         Log.i(TAG, "LockService created");
     }
 
+    /** 动态注册熄屏/亮屏广播，跟踪屏幕状态 */
+    private void registerScreenListener() {
+        screenReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+                if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                    screenOn = false;
+                } else if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                    screenOn = true;
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        try {
+            registerReceiver(screenReceiver, filter);
+        } catch (Exception e) {
+            Log.e(TAG, "registerScreenListener failed", e);
+        }
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        startForeground(NOTIFICATION_ID, buildNotification());
+        startForeground(NOTIFICATION_ID, buildNotification(pref.getRemainingMillis()));
+
+        // 解锁指令：原来写在已废弃的 onStart() 里（Android 2.0 起不再回调），永远不执行
+        if (intent != null && ACTION_UNLOCK.equals(intent.getAction())) {
+            unlockAndStop();
+            return START_NOT_STICKY;
+        }
 
         // 已锁屏 → 进入锁屏守护模式
         if (pref.isLocked()) {
@@ -98,6 +141,11 @@ public class LockService extends Service {
     // ==================== 计时模式 ====================
 
     private void startTicking() {
+        // 服务重启/开机时对账：只扣"服务死了但屏幕亮着"的时间（详见 PrefManager.deductOfflineIfAny）
+        pref.deductOfflineIfAny();
+        remainingMillis = pref.getRemainingMillis();
+        lastTickElapsed = SystemClock.elapsedRealtime();
+        persistCountdown = 0;
         tickRunnable = new Runnable() {
             @Override
             public void run() {
@@ -107,11 +155,19 @@ public class LockService extends Service {
                     showOverlayIfPermitted();
                     return;
                 }
-                if (pref.isTimerExpired()) {
+                long now = SystemClock.elapsedRealtime();
+                long dt = now - lastTickElapsed;
+                lastTickElapsed = now;
+                // 亮屏计时：熄屏期间暂停递减
+                if (dt > 0 && screenOn) remainingMillis -= dt;
+                if (remainingMillis <= 0) {
                     triggerLock();
                     return;
                 }
-                // 更新通知
+                if (--persistCountdown <= 0) {
+                    pref.persistTimer(remainingMillis);
+                    persistCountdown = PERSIST_EVERY_TICKS;
+                }
                 updateNotification();
                 // 每秒检查
                 handler.postDelayed(this, 1000);
@@ -177,18 +233,9 @@ public class LockService extends Service {
     }
 
     private boolean isLockScreenOnTop() {
-        try {
-            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (am == null) return false;
-            List<ActivityManager.RunningTaskInfo> tasks = am.getRunningTasks(1);
-            if (tasks == null || tasks.isEmpty()) return false;
-            ComponentName top = tasks.get(0).topActivity;
-            if (top == null) return false;
-            return top.getClassName().contains("LockScreen");
-        } catch (Exception e) {
-            Log.e(TAG, "getRunningTasks failed", e);
-            return false;
-        }
+        // getRunningTasks 在 Android 5.1+ 只返回自己的任务，无法判断真实前台；
+        // 改用同进程静态引用跟踪（见 LockScreenActivity.isOnTop）
+        return LockScreenActivity.isOnTop();
     }
 
     // ==================== 悬浮窗覆盖层 ====================
@@ -220,8 +267,7 @@ public class LockService extends Service {
                             ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                             : WindowManager.LayoutParams.TYPE_PHONE,
                     // 悬浮窗可聚焦，拦截 TV 遥控器焦点
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                            | WindowManager.LayoutParams.FLAG_DIM_BEHIND
+                    WindowManager.LayoutParams.FLAG_DIM_BEHIND
                             | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                     PixelFormat.TRANSLUCENT
             );
@@ -263,16 +309,8 @@ public class LockService extends Service {
      */
     public static void requestUnlock(Context context) {
         Intent intent = new Intent(context, LockService.class);
-        intent.setAction("com.kidslock.app.ACTION_UNLOCK");
+        intent.setAction(ACTION_UNLOCK);
         context.startService(intent);
-    }
-
-    @Override
-    public void onStart(Intent intent, int startId) {
-        super.onStart(intent, startId);
-        if (intent != null && "com.kidslock.app.ACTION_UNLOCK".equals(intent.getAction())) {
-            unlockAndStop();
-        }
     }
 
     private void unlockAndStop() {
@@ -302,12 +340,13 @@ public class LockService extends Service {
         }
     }
 
-    private Notification buildNotification() {
+    private Notification buildNotification(long remaining) {
         String contentText;
         if (pref.isLocked()) {
-            contentText = "电视已锁定，答对汉字即可解锁";
+            contentText = "设备已锁定，答对汉字即可解锁";
+        } else if (!screenOn) {
+            contentText = "熄屏暂停中 · 剩余观看时间：" + formatTime(remaining);
         } else {
-            long remaining = pref.getRemainingMillis();
             contentText = "剩余观看时间：" + formatTime(remaining);
         }
 
@@ -329,9 +368,9 @@ public class LockService extends Service {
     }
 
     private void updateNotification() {
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (nm != null) {
-            nm.notify(NOTIFICATION_ID, buildNotification());
+            nm.notify(NOTIFICATION_ID, buildNotification(remainingMillis));
         }
     }
 
@@ -349,6 +388,14 @@ public class LockService extends Service {
         }
         if (watchdogRunnable != null) {
             handler.removeCallbacks(watchdogRunnable);
+        }
+        if (screenReceiver != null) {
+            try {
+                unregisterReceiver(screenReceiver);
+            } catch (Exception e) {
+                // 未注册成功时忽略
+            }
+            screenReceiver = null;
         }
         hideOverlay();
         Log.i(TAG, "LockService destroyed");

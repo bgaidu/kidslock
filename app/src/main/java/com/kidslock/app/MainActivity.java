@@ -168,7 +168,7 @@ public class MainActivity extends AppCompatActivity {
 
         builder.setPositiveButton("确定", (dialog, which) -> {
             String pin = input.getText().toString().trim();
-            if (pin.length() == 4) {
+            if (pin.matches("\\d{4}")) {
                 pref.setParentPin(pin);
                 toast("PIN码已设置");
             } else {

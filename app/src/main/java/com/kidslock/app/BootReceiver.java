@@ -30,6 +30,9 @@ public class BootReceiver extends BroadcastReceiver {
 
         PrefManager pref = new PrefManager(context);
 
+        // 开机后先对账：跨重启不扣时长（关机期间屏幕必灭），只刷新时间戳
+        pref.deductOfflineIfAny();
+
         // 如果已经处于锁定状态，直接弹锁屏
         if (pref.isLocked()) {
             Log.i(TAG, "Device was locked, showing lock screen");

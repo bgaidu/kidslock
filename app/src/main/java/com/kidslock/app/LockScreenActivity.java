@@ -50,6 +50,16 @@ public class LockScreenActivity extends AppCompatActivity {
 
     private final Handler handler = new Handler(Looper.getMainLooper());
 
+    // 供 LockService 判断锁屏界面是否真实处于前台（同进程静态引用，
+    // 替代 Android 5.1+ 已拿不到其他应用任务的 getRunningTasks）
+    private static LockScreenActivity foregroundInstance;
+    private boolean resumed = false;
+
+    static boolean isOnTop() {
+        LockScreenActivity a = foregroundInstance;
+        return a != null && !a.isFinishing() && a.resumed;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -234,7 +244,7 @@ public class LockScreenActivity extends AppCompatActivity {
             updatePinDisplay();
             return;
         }
-        if (pinInput.toString().equals(pref.getParentPin())) {
+        if (pref.verifyPin(pinInput.toString())) {
             pref.resetPinFailures();
             unlock();
         } else {
@@ -278,6 +288,7 @@ public class LockScreenActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        resumed = false;
         // 按 HOME / 切到其他应用时，如果仍处于锁屏状态，延迟后重新拉起锁屏
         if (pref.isLocked()) {
             handler.postDelayed(reLockRunnable, RELOCK_DELAY_MS);
@@ -287,6 +298,8 @@ public class LockScreenActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
+        foregroundInstance = this;
         handler.removeCallbacks(reLockRunnable);
         hideSystemUI();
     }
@@ -300,9 +313,9 @@ public class LockScreenActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onUserLeaveHint() {
-        // 阻止用户离开
-        super.onUserLeaveHint();
+    protected void onDestroy() {
+        super.onDestroy();
+        if (foregroundInstance == this) foregroundInstance = null;
     }
 
     private void hideSystemUI() {
