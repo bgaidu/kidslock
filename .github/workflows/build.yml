@@ -67,8 +67,9 @@ jobs:
           ./gradlew assembleRelease --no-daemon
 
       - name: 验证 APK 签名
+        id: build
         run: |
-          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          APK=$(find app/build/outputs/apk/release -name '*universal*.apk' | head -1)
           echo "APK_PATH=$APK" >> $GITHUB_OUTPUT
           apksigner verify --print-certs "$APK"
 
