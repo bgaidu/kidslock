@@ -117,13 +117,24 @@ kidslock/
 export JAVA_HOME=<JDK路径>
 export ANDROID_HOME=<SDK路径>
 
+# 方式一：使用 debug keystore（自动签名，可直接安装）
 gradle assembleRelease
 
-# 签名（使用自己的 keystore）
-zipalign -f 4 app-universal-release-unsigned.apk aligned.apk
-apksigner sign --ks <你的.keystore> --out kidslock-release.apk aligned.apk
+# 方式二：使用自己的 keystore（正式签名）
+export KEYSTORE_FILE=<你的.keystore路径>
+export KEYSTORE_PASSWORD=<你的密码>
+export KEY_ALIAS=<你的alias>
+gradle assembleRelease
+
+# 方式三：构建 debug APK（自动签名）
+gradle assembleDebug
 ```
 
+> **签名说明**：
+> - 未配置 `KEYSTORE_FILE` 时，release 构建自动回退到 debug keystore（`~/.android/debug.keystore`），生成的 APK 可直接安装
+> - 配置 `KEYSTORE_FILE` 后，使用正式 keystore 签名；`KEY_ALIAS` 默认为 `kidslock`，如不同需显式指定
+> - GitHub Actions 构建时，在 Secrets 中配置 `KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS` 即可自动签名
+>
 > 已发布的 kidslock-release.apk 由原作者签名；本副本的改动需自行编译签名后安装。
 
 ## 注意事项
