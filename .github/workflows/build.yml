@@ -35,11 +35,15 @@ jobs:
       - name: 还原签名密钥
         env:
           KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           if [ -n "$KS_B64" ]; then
             echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/kidslock.keystore"
             echo "KEYSTORE_FILE=$RUNNER_TEMP/kidslock.keystore" >> "$GITHUB_ENV"
             echo "密钥已还原"
+            echo "=== Keystore 中的 alias 列表 ==="
+            keytool -list -keystore "$RUNNER_TEMP/kidslock.keystore" -storepass "$KS_PASS" 2>&1 || true
+            echo "==============================="
           else
             echo "未配置签名密钥，跳过 release 构建"
           fi
