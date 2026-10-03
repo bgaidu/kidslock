@@ -5,6 +5,7 @@ plugins {
 // 签名配置：优先使用 CI 环境变量，否则回退到 debug keystore（方便本地构建）
 def keystoreFile = System.getenv("KEYSTORE_FILE")
 def keystorePass = System.getenv("KEYSTORE_PASSWORD")
+def keyAlias = System.getenv("KEY_ALIAS") ?: "kidslock"
 def debugKeystore = file("${System.getProperty('user.home')}/.android/debug.keystore")
 
 android {
@@ -24,7 +25,7 @@ android {
             release {
                 storeFile file(keystoreFile)
                 storePassword keystorePass
-                keyAlias 'kidslock'
+                keyAlias keyAlias
                 keyPassword keystorePass
             }
         } else if (debugKeystore.exists()) {
