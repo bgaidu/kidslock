@@ -26,11 +26,10 @@ jobs:
           cache: gradle
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v2
         with:
           api-level: 34
           build-tools-version: '34.0.0'
-          emulator: false
 
       - name: 还原发布密钥库
         id: keystore
