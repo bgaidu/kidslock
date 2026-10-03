@@ -2,9 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
-// 签名配置来自 CI 环境变量（GitHub Actions Secrets），本地未设置时 release 不签名
+// 签名配置：优先使用 CI 环境变量，否则回退到 debug keystore（方便本地构建）
 def keystoreFile = System.getenv("KEYSTORE_FILE")
 def keystorePass = System.getenv("KEYSTORE_PASSWORD")
+def debugKeystore = file("${System.getProperty('user.home')}/.android/debug.keystore")
 
 android {
     namespace 'com.kidslock.app'
@@ -26,6 +27,13 @@ android {
                 keyAlias 'kidslock'
                 keyPassword keystorePass
             }
+        } else if (debugKeystore.exists()) {
+            release {
+                storeFile debugKeystore
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
         }
     }
 
@@ -33,7 +41,7 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            if (keystoreFile) signingConfig signingConfigs.release
+            if (keystoreFile || debugKeystore.exists()) signingConfig signingConfigs.release
         }
     }
 
