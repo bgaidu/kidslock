@@ -29,8 +29,8 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           api-level: 34
-          ndk-version: r27c
           build-tools-version: '34.0.0'
+          emulator: false
 
       - name: 还原发布密钥库
         id: keystore
