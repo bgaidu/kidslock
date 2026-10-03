@@ -58,6 +58,9 @@ jobs:
           echo "=== keystore 内容 ==="
           keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" 2>&1 || true
 
+      - name: 生成 Gradle Wrapper
+        run: gradle wrapper --gradle-version 8.5
+
       - name: 构建 Release APK
         run: |
           chmod +x ./gradlew
