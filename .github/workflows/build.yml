@@ -31,7 +31,6 @@ jobs:
           api-level: 34
           ndk-version: r27c
           build-tools-version: '34.0.0'
-          cmdline-tools-version: 'latest'
 
       - name: 还原发布密钥库
         id: keystore
@@ -46,8 +45,21 @@ jobs:
           echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
           echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
 
+      - name: 调试签名配置
+        run: |
+          echo "=== 签名配置检查 ==="
+          echo "KEYSTORE_FILE: $KEYSTORE_FILE"
+          echo "KEYSTORE_FILE 存在: $(test -f "$KEYSTORE_FILE" && echo true || echo false)"
+          echo "KEYSTORE_PASSWORD 长度: ${#KEYSTORE_PASSWORD}"
+          echo "KEY_ALIAS: $KEY_ALIAS"
+          echo "KEY_PASSWORD 长度: ${#KEY_PASSWORD}"
+          echo "=== keystore 内容 ==="
+          keytool -list -v -keystore "$KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" 2>&1 || true
+
       - name: 构建 Release APK
-        run: ./gradlew assembleRelease
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon
 
       - name: 验证 APK 签名
         run: |
