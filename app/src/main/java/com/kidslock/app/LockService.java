@@ -182,10 +182,11 @@ public class LockService extends Service {
         pref.setHomeAliasEnabled(this, true);
         pref.stopTimer();
 
-        // 尝试直接拉起锁屏界面；在 Android 10+ 上可能被系统阻止，
-        // 因此同时启动悬浮窗兜底。
-        startLockScreenActivity();
+        // 优先显示悬浮窗（立即拦截操作）
         showOverlayIfPermitted();
+        
+        // 同时尝试拉起锁屏 Activity（某些设备允许）
+        startLockScreenActivity();
 
         // 转为锁屏守护模式
         startWatchdog();
@@ -213,14 +214,10 @@ public class LockService extends Service {
                     return;
                 }
 
-                // 如果锁屏界面本身已经跑到前台，就不需要重复拉起，避免刷屏
+                // 只要没在前台，就尝试拉起锁屏（不依赖悬浮窗权限）
                 if (!isLockScreenOnTop()) {
-                    // 只有悬浮窗权限没开、且锁屏不在前台时，才尝试直接 startActivity。
-                    // 否则靠悬浮窗拦截即可。
-                    if (!canDrawOverlays()) {
-                        Log.i(TAG, "Lock screen not on top, trying direct pull");
-                        startLockScreenActivity();
-                    }
+                    Log.i(TAG, "Lock screen not on top, trying to pull");
+                    startLockScreenActivity();
                 }
 
                 // 悬浮窗应该一直显示，防止被桌面覆盖
@@ -316,11 +313,13 @@ public class LockService extends Service {
     private void unlockAndStop() {
         pref.setLocked(false);
         pref.setHomeAliasEnabled(this, false);
-        pref.stopTimer();
+        // 解锁后自动重新开始计时
+        int minutes = pref.getWatchLimitMinutes();
+        pref.startTimer(minutes);
         pref.resetPinFailures();
         hideOverlay();
-        stopForeground(true);
-        stopSelf();
+        // 重新开始计时模式（不停止服务）
+        startTicking();
     }
 
     // ==================== 通知 ====================

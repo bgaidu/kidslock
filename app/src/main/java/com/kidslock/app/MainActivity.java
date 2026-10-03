@@ -65,6 +65,15 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        pref = new PrefManager(this);
+        // 如果处于锁屏状态，强制跳转到锁屏界面（防止从后台/最近任务绕过）
+        if (pref.isLocked()) {
+            Intent lockIntent = new Intent(this, LockScreenActivity.class);
+            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(lockIntent);
+            finish();
+            return;
+        }
         // 先移除旧的，避免快速切回时重复 post 多个 Runnable
         handler.removeCallbacks(updateRunnable);
         handler.post(updateRunnable);

@@ -205,9 +205,11 @@ public class LockScreenActivity extends AppCompatActivity {
     private void unlock() {
         pref.setLocked(false);
         pref.setHomeAliasEnabled(this, false);
-        pref.stopTimer();
+        // 解锁后自动重新开始计时（使用当前设置的观看时长）
+        int minutes = pref.getWatchLimitMinutes();
+        pref.startTimer(minutes);
         pref.resetPinFailures();
-        // 通知服务移除悬浮窗并停止
+        // 通知服务移除悬浮窗，服务会重新进入计时模式
         LockService.requestUnlock(this);
         finishAffinity();
     }
@@ -310,6 +312,14 @@ public class LockScreenActivity extends AppCompatActivity {
         foregroundInstance = this;
         handler.removeCallbacks(reLockRunnable);
         hideSystemUI();
+        
+        // 监听系统 UI 可见性变化，导航栏弹出时立即隐藏
+        getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(visibility -> {
+            if ((visibility & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0) {
+                // 导航栏显示了，立即隐藏
+                hideSystemUI();
+            }
+        });
     }
 
     @Override
@@ -335,5 +345,12 @@ public class LockScreenActivity extends AppCompatActivity {
                 | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
                 | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
         decorView.setSystemUiVisibility(uiOptions);
+        
+        // 额外保障：设置 Window 标志防止导航栏弹出
+        getWindow().addFlags(
+            WindowManager.LayoutParams.FLAG_FULLSCREEN
+            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        );
     }
 }
