@@ -1,65 +1,73 @@
-name: Build APK
+name: Build Release APK
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'app/**'
-      - 'build.gradle'
-      - 'settings.gradle'
-      - 'gradle/**'
-      - '.github/workflows/**'
-  workflow_dispatch:   # 允许在 Actions 页面手动触发
+    tags:
+      - 'v*'        # 触发：推送 v1.0、v1.1 等标签
+  workflow_dispatch: # 手动触发
+
+permissions:
+  contents: write   # 上传 Release 资产需要
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
-      - name: 检出代码
+      - name: Checkout 代码
         uses: actions/checkout@v4
 
-      - name: 安装 JDK 17
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
+          cache: gradle
 
-      - name: 安装 Gradle 8.5（仓库无 gradlew，按 wrapper 配置的版本装）
-        uses: gradle/actions/setup-gradle@v4
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
         with:
-          gradle-version: '8.5'
+          api-level: 34
+          ndk-version: r27c
+          build-tools-version: '34.0.0'
+          cmdline-tools-version: 'latest'
 
-      - name: 编译 Debug APK（debug 签名，可直接安装）
-        run: gradle assembleDebug --no-daemon
-
-      - name: 还原签名密钥
-        env:
-          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
-          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+      - name: 还原发布密钥库
+        id: keystore
         run: |
-          if [ -n "$KS_B64" ]; then
-            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/kidslock.keystore"
-            echo "KEYSTORE_FILE=$RUNNER_TEMP/kidslock.keystore" >> "$GITHUB_ENV"
-            echo "密钥已还原"
-            echo "=== Keystore 中的 alias 列表 ==="
-            keytool -list -keystore "$RUNNER_TEMP/kidslock.keystore" -storepass "$KS_PASS" 2>&1 || true
-            echo "==============================="
-          else
-            echo "未配置签名密钥，跳过 release 构建"
-          fi
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > kidslock-release.keystore
+          echo "KEYSTORE_FILE=$(pwd)/kidslock-release.keystore" >> $GITHUB_OUTPUT
 
-      - name: 编译 Release APK（正式签名）
-        if: env.KEYSTORE_FILE != ''
-        run: gradle assembleRelease --no-daemon
+      - name: 配置 Gradle 签名环境变量
+        run: |
+          echo "KEYSTORE_FILE=$(pwd)/kidslock-release.keystore" >> $GITHUB_ENV
+          echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> $GITHUB_ENV
+          echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> $GITHUB_ENV
+          echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> $GITHUB_ENV
+
+      - name: 构建 Release APK
+        run: ./gradlew assembleRelease
+
+      - name: 验证 APK 签名
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          echo "APK_PATH=$APK" >> $GITHUB_OUTPUT
+          apksigner verify --print-certs "$APK"
+
+      - name: 创建 GitHub Release 并上传 APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.build.outputs.APK_PATH }}
+          generate_release_notes: true
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 上传 APK 构建产物
+      - name: 上传 APK 为 Artifact（非标签触发时）
+        if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: actions/upload-artifact@v4
         with:
-          name: kidslock-apk
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
+          name: kidslock-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 30

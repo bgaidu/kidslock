@@ -117,25 +117,25 @@ kidslock/
 export JAVA_HOME=<JDK路径>
 export ANDROID_HOME=<SDK路径>
 
-# 方式一：使用 debug keystore（自动签名，可直接安装）
-gradle assembleRelease
+# 方式一：构建 debug APK（自动使用 debug keystore 签名，可直接安装）
+# 适合开发测试，但荣耀/华为等设备可能拒绝安装 debug 签名的 APK
+gradle assembleDebug
 
-# 方式二：使用自己的 keystore（正式签名）
+# 方式二：构建 release APK（需要配置正式发布密钥库）
+# 设置环境变量后，使用正式 keystore 签名，可在所有设备安装
 export KEYSTORE_FILE=<你的.keystore路径>
 export KEYSTORE_PASSWORD=<你的密码>
-export KEY_ALIAS=<你的alias>
+export KEY_ALIAS=<你的alias>         # 可选，默认 kidslock
+export KEY_PASSWORD=<密钥密码>       # 可选，默认同 KEYSTORE_PASSWORD
 gradle assembleRelease
-
-# 方式三：构建 debug APK（自动签名）
-gradle assembleDebug
 ```
 
 > **签名说明**：
-> - 未配置 `KEYSTORE_FILE` 时，release 构建自动回退到 debug keystore（`~/.android/debug.keystore`），生成的 APK 可直接安装
-> - 配置 `KEYSTORE_FILE` 后，使用正式 keystore 签名；`KEY_ALIAS` 默认为 `kidslock`，如不同需显式指定
+> - **不再**为 release 构建自动回退到 debug keystore，避免"未包含任何有效的证书"错误
+> - 未配置 `KEYSTORE_FILE` 时，release 构建产出**未签名** APK（需手动用 `apksigner` 签名或配置密钥库）
+> - debug 构建 (`assembleDebug`) 仍自动使用 debug keystore，适合开发测试
 > - GitHub Actions 构建时，在 Secrets 中配置 `KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS` 即可自动签名
->
-> 已发布的 kidslock-release.apk 由原作者签名；本副本的改动需自行编译签名后安装。
+> - 已发布的 kidslock-release.apk 由原作者签名；本副本的改动需自行编译签名后安装
 
 ## 注意事项
 

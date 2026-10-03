@@ -2,11 +2,17 @@ plugins {
     id 'com.android.application'
 }
 
-// 签名配置：优先使用 CI 环境变量，否则回退到 debug keystore（方便本地构建）
+// 签名配置：仅通过环境变量配置正式发布密钥库
+// 本地开发请使用 debug 构建 (./gradlew assembleDebug)，它会自动使用 debug keystore
+// 发布构建 (./gradlew assembleRelease) 需要设置以下环境变量：
+//   KEYSTORE_FILE      - 密钥库文件路径
+//   KEYSTORE_PASSWORD  - 密钥库密码
+//   KEY_ALIAS          - 别名 (可选，默认 kidslock)
+//   KEY_PASSWORD       - 密钥密码 (可选，默认同 KEYSTORE_PASSWORD)
 def keystoreFile = System.getenv("KEYSTORE_FILE")
 def keystorePass = System.getenv("KEYSTORE_PASSWORD")
 def keyAliasName = System.getenv("KEY_ALIAS") ?: "kidslock"
-def debugKeystore = file("${System.getProperty('user.home')}/.android/debug.keystore")
+def keyPass = System.getenv("KEY_PASSWORD") ?: keystorePass
 
 android {
     namespace 'com.kidslock.app'
@@ -21,28 +27,27 @@ android {
     }
 
     signingConfigs {
-        if (keystoreFile) {
+        if (keystoreFile && keystorePass) {
             release {
                 storeFile file(keystoreFile)
                 storePassword keystorePass
                 keyAlias keyAliasName
-                keyPassword keystorePass
-            }
-        } else if (debugKeystore.exists()) {
-            release {
-                storeFile debugKeystore
-                storePassword 'android'
-                keyAlias 'androiddebugkey'
-                keyPassword 'android'
+                keyPassword keyPass
             }
         }
+        // 不再为 release 回退使用 debug keystore，避免"未包含任何有效的证书"错误
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            if (keystoreFile || debugKeystore.exists()) signingConfig signingConfigs.release
+            if (keystoreFile && keystorePass) {
+                signingConfig signingConfigs.release
+            } else {
+                // 未配置发布密钥库时，release 构建不签名（需手动签名或配置密钥库）
+                // 这避免了意外使用 debug 证书导致荣耀等设备安装失败
+            }
         }
     }
 
