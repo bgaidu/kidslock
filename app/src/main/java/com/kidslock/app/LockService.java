@@ -290,8 +290,12 @@ public class LockService extends Service {
 
     /**
      * 从悬浮窗点击/按键等用户交互场景启动锁屏 Activity。
+     * 先移除悬浮窗，确保锁屏 Activity 能正常显示在前台。
      */
     private void startLockScreenActivity() {
+        // 先移除悬浮窗，避免遮挡锁屏 Activity
+        hideOverlay();
+        
         Intent lockIntent = new Intent(this, LockScreenActivity.class);
         lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         try {
