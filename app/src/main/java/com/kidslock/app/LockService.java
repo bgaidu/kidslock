@@ -241,6 +241,10 @@ public class LockService extends Service {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this);
     }
 
+    // 记录上次启动锁屏 Activity 的时间，避免 watchdog 立即显示悬浮窗遮挡
+    private long lastLockScreenStartTime = 0;
+    private static final long LOCK_SCREEN_START_DELAY_MS = 2000;
+
     /**
      * 显示全屏悬浮窗覆盖层。锁屏状态下只要权限已开就一直显示，
      * 拦截孩子的所有触摸/按键操作，引导回到锁屏界面。
@@ -248,6 +252,12 @@ public class LockService extends Service {
     private void showOverlayIfPermitted() {
         if (!canDrawOverlays()) {
             Log.d(TAG, "Overlay permission not granted, skip overlay");
+            return;
+        }
+        // 如果锁屏 Activity 刚启动，延迟显示悬浮窗，避免遮挡
+        long timeSinceStart = SystemClock.elapsedRealtime() - lastLockScreenStartTime;
+        if (lastLockScreenStartTime > 0 && timeSinceStart < LOCK_SCREEN_START_DELAY_MS) {
+            Log.d(TAG, "Lock screen activity just started, delay overlay");
             return;
         }
         if (overlayView != null) {
@@ -293,6 +303,9 @@ public class LockService extends Service {
      * 先移除悬浮窗，确保锁屏 Activity 能正常显示在前台。
      */
     private void startLockScreenActivity() {
+        // 记录启动时间，让 watchdog 延迟显示悬浮窗
+        lastLockScreenStartTime = SystemClock.elapsedRealtime();
+        
         // 先移除悬浮窗，避免遮挡锁屏 Activity
         hideOverlay();
         
