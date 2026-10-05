@@ -4,11 +4,14 @@ import android.accessibilityservice.AccessibilityService;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
+
+import androidx.core.content.ContextCompat;
 
 /**
  * 守护用无障碍服务：解决"开机自启广播被拦、无自启动白名单"设备上的复活通道。
@@ -38,6 +41,51 @@ public class RecoveryAccessibilityService extends AccessibilityService {
                 context.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
         if (TextUtils.isEmpty(enabled)) return false;
         ComponentName cn = new ComponentName(context, RecoveryAccessibilityService.class);
+        for (String item : enabled.split(":")) {
+            String s = item.trim();
+            if (s.equalsIgnoreCase(cn.flattenToString())
+                    || s.equalsIgnoreCase(cn.flattenToShortString())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 自行启用守护服务。前提是应用持有 WRITE_SECURE_SETTINGS——正常安装拿不到，
+     * 需 adb 授权一次（pm grant，授权后持久有效），此后应用可永远自助：
+     * 被用户/系统关闭后自动写回，开机后无需任何人进设置页。
+     * 注意保留列表里其他应用的无障碍服务（如电视的语音控制）。
+     */
+    public static boolean trySelfEnable(Context context) {
+        if (isServiceEnabled(context)) return true;
+        if (ContextCompat.checkSelfPermission(context, "android.permission.WRITE_SECURE_SETTINGS")
+                != PackageManager.PERMISSION_GRANTED) {
+            return false;
+        }
+        try {
+            ComponentName cn = new ComponentName(context, RecoveryAccessibilityService.class);
+            String flat = cn.flattenToShortString();
+            String enabled = Settings.Secure.getString(
+                    context.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (TextUtils.isEmpty(enabled) || "null".equals(enabled.trim())) {
+                enabled = flat;
+            } else if (!containsService(enabled, cn)) {
+                enabled = enabled.trim() + ":" + flat;
+            }
+            Settings.Secure.putString(context.getContentResolver(),
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, enabled);
+            Settings.Secure.putInt(context.getContentResolver(),
+                    Settings.Secure.ACCESSIBILITY_ENABLED, 1);
+            Log.i(TAG, "Self-enabled accessibility service (WRITE_SECURE_SETTINGS held)");
+            return isServiceEnabled(context);
+        } catch (Exception e) {
+            Log.e(TAG, "Self-enable failed", e);
+            return false;
+        }
+    }
+
+    private static boolean containsService(String enabled, ComponentName cn) {
         for (String item : enabled.split(":")) {
             String s = item.trim();
             if (s.equalsIgnoreCase(cn.flattenToString())

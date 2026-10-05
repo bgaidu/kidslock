@@ -113,6 +113,11 @@ public class MainActivity extends AppCompatActivity {
         if (pref.isTimerActive()) {
             startLockService();
         }
+        // 守护服务（无障碍）未启用：持有 WRITE_SECURE_SETTINGS（adb 授权一次后
+        // 永久有效）时自行写回，否则由设置页的守护按钮引导用户手动开启
+        if (!RecoveryAccessibilityService.isServiceEnabled(this)) {
+            RecoveryAccessibilityService.trySelfEnable(this);
+        }
         // 先移除旧的，避免快速切回时重复 post 多个 Runnable
         handler.removeCallbacks(updateRunnable);
         handler.post(updateRunnable);
@@ -138,6 +143,12 @@ public class MainActivity extends AppCompatActivity {
         btnGuardStatus.setOnClickListener(v -> {
             if (RecoveryAccessibilityService.isServiceEnabled(this)) {
                 toast("守护服务已开启");
+                return;
+            }
+            // 先尝试自行启用（持有 WRITE_SECURE_SETTINGS 时直接写回）
+            if (RecoveryAccessibilityService.trySelfEnable(this)) {
+                toast("守护服务已自动开启");
+                updateStatus();
                 return;
             }
             try {

@@ -29,6 +29,8 @@ public class AlarmReceiver extends BroadcastReceiver {
             return;
         }
         Log.i(TAG, "Expiry alarm fired, restarting guard service");
+        // 无障碍守护若被清除，顺手写回（需 WRITE_SECURE_SETTINGS，adb 授权过一次即永久持有）
+        RecoveryAccessibilityService.trySelfEnable(context);
         try {
             Intent service = new Intent(context, LockService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
