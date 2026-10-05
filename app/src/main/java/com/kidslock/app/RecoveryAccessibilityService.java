@@ -5,6 +5,8 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -30,7 +32,18 @@ public class RecoveryAccessibilityService extends AccessibilityService {
     private static final String TAG = "RecoveryA11y";
     /** 恢复尝试防抖间隔：窗口切换事件很密集，避免高频 startActivity */
     private static final long RECOVERY_DEBOUNCE_MS = 3000;
+    /** 周期自检间隔：MIUI TV 会冻结后台应用的高精度闹钟（实测），Handler 自检不受影响 */
+    private static final long PERIODIC_CHECK_MS = 30000;
     private long lastRecoveryAttempt;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable periodicRecovery = new Runnable() {
+        @Override
+        public void run() {
+            recoverIfNeeded();
+            handler.postDelayed(this, PERIODIC_CHECK_MS);
+        }
+    };
 
     /**
      * 判断守护服务是否已在系统无障碍设置中启用（需用户手动开启一次，
@@ -101,6 +114,17 @@ public class RecoveryAccessibilityService extends AccessibilityService {
         super.onServiceConnected();
         Log.i(TAG, "Service connected (boot or rebinding), running recovery check");
         recoverIfNeeded();
+        // 周期自检：窗口事件只在"变化"时才有，静默状态（如服务被停、倒计时过期）
+        // 不会产生事件——30 秒一轮保证最终被发现。进程被杀后系统重新绑定，
+        // onServiceConnected 会立即再跑一轮，等效于开机自启。
+        handler.removeCallbacks(periodicRecovery);
+        handler.postDelayed(periodicRecovery, PERIODIC_CHECK_MS);
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        handler.removeCallbacks(periodicRecovery);
+        return super.onUnbind(intent);
     }
 
     @Override
@@ -151,11 +175,21 @@ public class RecoveryAccessibilityService extends AccessibilityService {
                     startActivity(new Intent(this, LockScreenActivity.class)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
                 }
-                // 锁屏守护服务也一并确保在运行（-watchdog/悬浮窗依赖它）
+                // 锁屏守护服务也一并确保在运行（watchdog/悬浮窗依赖它）
                 startServiceSafely();
             } else if (pref.isTimerActive()) {
-                // 计时中但服务可能已死（无障碍绑定通常发生在进程刚复活时）
-                startServiceSafely();
+                // 服务死亡期间屏幕亮着的时间照算（对账逻辑在 PrefManager）
+                pref.deductOfflineIfAny();
+                if (pref.getRemainingMillis() <= 0) {
+                    // 时间已耗尽而锁屏未触发（服务被系统停掉、闹钟被推迟）：
+                    // 直接拉起锁屏界面——其 onCreate 会以前台身份启动服务，
+                    // 服务 onStartCommand 对账后触发完整锁定流程
+                    Log.i(TAG, "Timer expired while service down, pulling lock screen");
+                    startActivity(new Intent(this, LockScreenActivity.class)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
+                } else {
+                    startServiceSafely();
+                }
             }
         } catch (Exception e) {
             Log.e(TAG, "Recovery failed", e);
