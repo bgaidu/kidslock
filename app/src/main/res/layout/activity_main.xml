@@ -262,6 +262,19 @@
                 android:clickable="true" />
         </LinearLayout>
 
+        <!-- 守护服务（无障碍）状态：未开启时点击跳转系统无障碍设置 -->
+        <Button
+            android:id="@+id/btnGuardStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/btn_height"
+            android:layout_marginTop="@dimen/spacing_medium"
+            android:minWidth="300dp"
+            android:textSize="@dimen/text_button"
+            android:background="@drawable/btn_settings_bg"
+            android:textColor="@color/btn_text"
+            android:focusable="true"
+            android:clickable="true" />
+
         <!-- 设置PIN -->
         <Button
             android:id="@+id/btnSetPin"

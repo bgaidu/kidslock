@@ -86,6 +86,21 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- 守护无障碍服务：系统开机自动绑定已启用的无障碍服务（不受自启动拦截），
+             进程被杀也会被系统重新绑定——免 ROOT 设备上的开机自启与复活通道 -->
+        <service
+            android:name=".RecoveryAccessibilityService"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/recovery_accessibility_config" />
+        </service>
+
         <!-- Timer Service -->
         <service
             android:name=".LockService"

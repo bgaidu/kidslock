@@ -2,10 +2,12 @@ package com.kidslock.app;
 
 import android.Manifest;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.provider.Settings;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -38,6 +40,7 @@ public class MainActivity extends AppCompatActivity {
     private Button btnAutoStart;
     private TextView tvWatchTime;
     private TextView tvUnlockCount;
+    private Button btnGuardStatus;
 
     // 家长 PIN 门禁：设置页每次进入（含从后台返回）都要求重新验证，
     // 否则孩子从桌面打开应用就能改参数、停计时
@@ -131,6 +134,21 @@ public class MainActivity extends AppCompatActivity {
         btnAutoStart = findViewById(R.id.btnAutoStart);
         tvWatchTime = findViewById(R.id.tvWatchTime);
         tvUnlockCount = findViewById(R.id.tvUnlockCount);
+        btnGuardStatus = findViewById(R.id.btnGuardStatus);
+        btnGuardStatus.setOnClickListener(v -> {
+            if (RecoveryAccessibilityService.isServiceEnabled(this)) {
+                toast("守护服务已开启");
+                return;
+            }
+            try {
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                toast("请在列表中找到「儿童锁屏」并开启");
+            } catch (ActivityNotFoundException e) {
+                // 个别电视没有标准无障碍设置页（如小米 TV），只能人工引导
+                toast("请到系统设置的无障碍/辅助功能中开启「儿童锁屏」");
+            }
+        });
 
         // 家长 PIN 门禁（与锁屏界面共用 view_pin_pad 面板）
         layoutSettings = findViewById(R.id.settingsScroll);
@@ -331,6 +349,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateStatus() {
+        // 守护服务（无障碍）状态
+        btnGuardStatus.setText(RecoveryAccessibilityService.isServiceEnabled(this)
+                ? "守护服务：已开启" : "守护服务：未开启，点击开启");
+
         // 开机自启
         btnAutoStart.setText(pref.isAutoStart() ? "开机自启：已开启" : "开机自启：已关闭");
 
