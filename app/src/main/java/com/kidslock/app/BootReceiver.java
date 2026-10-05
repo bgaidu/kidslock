@@ -24,7 +24,8 @@ public class BootReceiver extends BroadcastReceiver {
 
         boolean isBoot = action.equals(Intent.ACTION_BOOT_COMPLETED)
                 || action.equals("android.intent.action.QUICKBOOT_POWERON")
-                || action.equals("com.android.intent.action.BOOT_COMPLETED");
+                || action.equals("com.android.intent.action.BOOT_COMPLETED")
+                || action.equals("android.intent.action.autoStart");
 
         if (!isBoot) return;
 

@@ -75,6 +75,8 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="com.android.intent.action.BOOT_COMPLETED" />
+                <!-- 小米/MIUI 电视用自定义广播代替被拦截的 BOOT_COMPLETED -->
+                <action android:name="android.intent.action.autoStart" />
             </intent-filter>
         </receiver>
 
