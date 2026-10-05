@@ -60,6 +60,15 @@ public class LockScreenActivity extends AppCompatActivity {
         return a != null && !a.isFinishing() && a.resumed;
     }
 
+    /**
+     * 供 LockService 判断锁屏 Activity 是否正在启动过程中。
+     * 避免 watchdog 在 Activity 启动时误判为不在前台而重复启动。
+     */
+    static boolean isStarting() {
+        LockScreenActivity a = foregroundInstance;
+        return a != null && !a.isFinishing() && !a.resumed;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -287,7 +296,6 @@ public class LockScreenActivity extends AppCompatActivity {
         super.onResume();
         resumed = true;
         foregroundInstance = this;
-        handler.removeCallbacks(reLockRunnable);
         hideSystemUI();
         
         // 监听系统 UI 可见性变化，导航栏弹出时立即隐藏

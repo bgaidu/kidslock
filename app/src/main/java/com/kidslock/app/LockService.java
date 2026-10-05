@@ -244,11 +244,9 @@ public class LockService extends Service {
     private boolean isLockScreenOnTop() {
         // getRunningTasks 在 Android 5.1+ 只返回自己的任务，无法判断真实前台；
         // 改用同进程静态引用跟踪（见 LockScreenActivity.isOnTop）
-        LockScreenActivity activity = LockScreenActivity.foregroundInstance;
-        if (activity == null) return false;
+        if (LockScreenActivity.isOnTop()) return true;
         // 如果 Activity 正在启动但还没 resumed，也认为它在前台（避免 watchdog 重复启动）
-        if (activity.isFinishing()) return false;
-        return activity.resumed || activity.isChangingConfigurations();
+        return LockScreenActivity.isStarting();
     }
 
     // ==================== 悬浮窗覆盖层 ====================
