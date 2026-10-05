@@ -214,11 +214,23 @@ public class LockService extends Service {
                     return;
                 }
 
-                // 只要没在前台，就尝试拉起锁屏（不依赖悬浮窗权限）
-                if (!isLockScreenOnTop()) {
-                    Log.i(TAG, "Lock screen not on top, trying to pull");
-                    startLockScreenActivity();
+                // 如果锁屏 Activity 已经在前台，不需要操作
+                if (isLockScreenOnTop()) {
+                    handler.postDelayed(this, 800);
+                    return;
                 }
+
+                // 如果锁屏 Activity 正在启动中，等待它完成
+                long timeSinceStart = SystemClock.elapsedRealtime() - lastLockScreenStartTime;
+                if (lastLockScreenStartTime > 0 && timeSinceStart < LOCK_SCREEN_START_DELAY_MS) {
+                    Log.d(TAG, "Lock screen activity starting, waiting...");
+                    handler.postDelayed(this, 800);
+                    return;
+                }
+
+                // 尝试拉起锁屏 Activity
+                Log.i(TAG, "Lock screen not on top, trying to pull");
+                startLockScreenActivity();
 
                 // 悬浮窗应该一直显示，防止被桌面覆盖
                 showOverlayIfPermitted();
@@ -232,7 +244,11 @@ public class LockService extends Service {
     private boolean isLockScreenOnTop() {
         // getRunningTasks 在 Android 5.1+ 只返回自己的任务，无法判断真实前台；
         // 改用同进程静态引用跟踪（见 LockScreenActivity.isOnTop）
-        return LockScreenActivity.isOnTop();
+        LockScreenActivity activity = LockScreenActivity.foregroundInstance;
+        if (activity == null) return false;
+        // 如果 Activity 正在启动但还没 resumed，也认为它在前台（避免 watchdog 重复启动）
+        if (activity.isFinishing()) return false;
+        return activity.resumed || activity.isChangingConfigurations();
     }
 
     // ==================== 悬浮窗覆盖层 ====================
@@ -274,8 +290,9 @@ public class LockService extends Service {
                             ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                             : WindowManager.LayoutParams.TYPE_PHONE,
                     // 悬浮窗可聚焦，拦截 TV 遥控器焦点
-                    WindowManager.LayoutParams.FLAG_DIM_BEHIND
-                            | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                    // 移除 FLAG_DIM_BEHIND，避免遮挡背后的锁屏 Activity
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                     PixelFormat.TRANSLUCENT
             );
             params.gravity = Gravity.TOP | Gravity.START;
@@ -309,13 +326,16 @@ public class LockService extends Service {
         // 先移除悬浮窗，避免遮挡锁屏 Activity
         hideOverlay();
         
-        Intent lockIntent = new Intent(this, LockScreenActivity.class);
-        lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        try {
-            startActivity(lockIntent);
-        } catch (Exception e) {
-            Log.e(TAG, "Start LockScreenActivity failed", e);
-        }
+        // 延迟启动 Activity，确保悬浮窗完全移除
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            Intent lockIntent = new Intent(this, LockScreenActivity.class);
+            lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            try {
+                startActivity(lockIntent);
+            } catch (Exception e) {
+                Log.e(TAG, "Start LockScreenActivity failed", e);
+            }
+        }, 100);
     }
 
     /**

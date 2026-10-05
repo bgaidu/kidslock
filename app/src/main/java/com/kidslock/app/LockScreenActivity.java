@@ -70,19 +70,13 @@ public class LockScreenActivity extends AppCompatActivity {
         requiredCount = pref.getUnlockCount();
 
         // 窗口属性：全屏，保持显示
-        //
-        // 注意：FLAG_SHOW_WHEN_LOCKED 与 FLAG_DISMISS_KEYGUARD 自 API 27 起废弃。
-        // 在 Android 12+ 上它们不再可靠——若设备处于系统锁屏状态，锁屏界面可能无法弹出。
-        // 彻底解决需走 DevicePolicyManager.setKeyguardDisabled()，但那要求本应用被设为
-        // 设备所有者（Device Owner），会改变安装方式且启用后难以撤销，属于部署取舍
-        // 而非纯代码改动。当前保留这两个 flag：对未设系统锁屏的设备（多数家庭场景）仍有效。
-        // 目标设备若确实有系统锁屏，请先完成上文"安装后必做的权限设置"中的
-        // "锁屏/安全中心"相关项，或让设备不启用系统锁屏密码。
         getWindow().addFlags(
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                         | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
                         | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
                         | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+                        | WindowManager.LayoutParams.FLAG_FULLSCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
         );
         // 沉浸式
         hideSystemUI();
@@ -267,21 +261,6 @@ public class LockScreenActivity extends AppCompatActivity {
 
     // ==================== 防绕过 ====================
 
-    /** HOME/切换应用后重新拉起锁屏的延迟（毫秒） */
-    private static final long RELOCK_DELAY_MS = 800;
-
-    private final Runnable reLockRunnable = new Runnable() {
-        @Override
-        public void run() {
-            // 离开时仍处于锁屏状态 → 立刻把锁屏界面拉回来
-            if (pref.isLocked()) {
-                Intent lockIntent = new Intent(LockScreenActivity.this, LockScreenActivity.class);
-                lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                startActivity(lockIntent);
-            }
-        }
-    };
-
     @Override
     public void onBackPressed() {
         // 屏蔽返回键，不允许退出锁屏
@@ -299,10 +278,8 @@ public class LockScreenActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         resumed = false;
-        // 按 HOME / 切到其他应用时，如果仍处于锁屏状态，延迟后重新拉起锁屏
-        if (pref.isLocked()) {
-            handler.postDelayed(reLockRunnable, RELOCK_DELAY_MS);
-        }
+        // 移除 reLockRunnable，避免与 watchdog 冲突导致循环
+        // watchdog 会负责重新拉起锁屏
     }
 
     @Override
