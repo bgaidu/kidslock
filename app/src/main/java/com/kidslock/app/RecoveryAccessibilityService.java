@@ -108,7 +108,35 @@ public class RecoveryAccessibilityService extends AccessibilityService {
         if (event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             return;
         }
+        suppressForeignWindow(event);
         recoverIfNeeded();
+    }
+
+    /**
+     * 锁定状态下出现外来窗口（平板自由小窗/通知栏/其他应用）时：
+     * 全局 HOME 收起小窗（MagicOS 小窗会被最小化），并让锁屏悬浮窗
+     * 强制顶上盖住——自由窗口层永远高于全屏应用层，锁屏界面自身压不住，
+     * 只能靠 TYPE_APPLICATION_OVERLAY 的系统悬浮窗。 kidslock 自己的
+     * 窗口事件忽略，避免循环。
+     */
+    private static long lastSuppress;
+    private static final long SUPPRESS_DEBOUNCE_MS = 800;
+
+    private void suppressForeignWindow(AccessibilityEvent event) {
+        try {
+            PrefManager pref = new PrefManager(this);
+            if (!pref.isLocked()) return;
+            CharSequence pkg = event.getPackageName();
+            if (pkg == null || "com.kidslock.app".contentEquals(pkg)) return;
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastSuppress < SUPPRESS_DEBOUNCE_MS) return;
+            lastSuppress = now;
+            Log.i(TAG, "Foreign window while locked: " + pkg + ", collapsing & covering");
+            performGlobalAction(GLOBAL_ACTION_HOME);
+            LockService.holdOverlay(this);
+        } catch (Exception e) {
+            Log.e(TAG, "suppressForeignWindow failed", e);
+        }
     }
 
     private void recoverIfNeeded() {

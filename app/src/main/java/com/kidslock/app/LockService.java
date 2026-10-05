@@ -75,6 +75,7 @@ public class LockService extends Service {
         screenOn = powerManager != null && powerManager.isInteractive();
         registerScreenListener();
         createNotificationChannel();
+        runningInstance = this;
         Log.i(TAG, "LockService created");
     }
 
@@ -113,6 +114,12 @@ public class LockService extends Service {
         if (intent != null && ACTION_UNLOCK.equals(intent.getAction())) {
             unlockAndStop();
             return START_STICKY;  // 修复：返回 START_STICKY，让服务保持运行
+        }
+
+        // 无障碍守护检测到外来窗口（小窗等）浮在锁屏上：强制显示悬浮窗盖住
+        if (intent != null && ACTION_HOLD_OVERLAY.equals(intent.getAction())) {
+            handleHoldOverlay();
+            return START_STICKY;
         }
 
         // 已锁屏 → 进入锁屏守护模式
@@ -213,6 +220,43 @@ public class LockService extends Service {
 
     // ==================== 锁屏守护模式 ====================
 
+    /** 锁屏悬浮窗的强制保持期：检测到外来窗口（如平板小窗）时，悬浮窗至少保持到该时刻 */
+    private static volatile long overlayHoldUntil;
+    /** 悬浮窗保持动作 */
+    public static final String ACTION_HOLD_OVERLAY = "com.kidslock.app.ACTION_HOLD_OVERLAY";
+    /** 运行中的服务实例，供无障碍守护同进程直调（避免后台 startService 受限） */
+    private static volatile LockService runningInstance;
+
+    /**
+     * 强制显示悬浮窗并保持一段时间。用于无障碍服务检测到"外来自由窗口
+     * （小窗）浮在锁屏之上"时：自由窗口层永远高于全屏应用层，锁屏界面
+     * 压不住它，唯一的办法是用系统悬浮窗（TYPE_APPLICATION_OVERLAY）盖住。
+     */
+    static void holdOverlay(Context context) {
+        overlayHoldUntil = SystemClock.elapsedRealtime() + 5000;
+        LockService s = runningInstance;
+        if (s != null) {
+            // 锁屏状态下守护服务必然在运行，同进程直接调
+            s.showOverlayIfPermitted();
+            return;
+        }
+        Intent i = new Intent(context, LockService.class).setAction(ACTION_HOLD_OVERLAY);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(i);
+            } else {
+                context.startService(i);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "holdOverlay start service failed", e);
+        }
+    }
+
+    private void handleHoldOverlay() {
+        showOverlayIfPermitted();
+    }
+
+
     /** 请求码，与通知的 PendingIntent 区分开 */
     private static final int ALARM_REQUEST_CODE = 2001;
 
@@ -261,8 +305,11 @@ public class LockService extends Service {
                 }
 
                 if (LockScreenActivity.isOnTop()) {
-                    // 锁屏界面确认在前台：悬浮窗不再需要，移除以免遮挡答题界面
-                    hideOverlay();
+                    // 锁屏界面确认在前台：正常收起悬浮窗以免遮挡答题界面；
+                    // 但若刚检测到外来窗口（平板小窗浮在锁屏之上），保持盖住
+                    if (SystemClock.elapsedRealtime() >= overlayHoldUntil) {
+                        hideOverlay();
+                    }
                     handler.postDelayed(this, 800);
                     return;
                 }
@@ -454,6 +501,7 @@ public class LockService extends Service {
             screenReceiver = null;
         }
         hideOverlay();
+        if (runningInstance == this) runningInstance = null;
         Log.i(TAG, "LockService destroyed");
         super.onDestroy();
     }
