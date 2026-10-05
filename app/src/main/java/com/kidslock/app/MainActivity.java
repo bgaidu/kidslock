@@ -195,9 +195,13 @@ public class MainActivity extends AppCompatActivity {
         if (gateVerified) {
             layoutGate.setVisibility(View.GONE);
             layoutSettings.setVisibility(View.VISIBLE);
+            // TV：门禁隐藏后把焦点交给设置页第一个按钮
+            findViewById(R.id.btnStartTimer).post(() -> findViewById(R.id.btnStartTimer).requestFocus());
         } else {
-            layoutGate.setVisibility(View.VISIBLE);
             layoutSettings.setVisibility(View.GONE);
+            layoutGate.setVisibility(View.VISIBLE);
+            // TV：显式定位到 PIN 键盘第一个数字键
+            findViewById(R.id.btnPin1).post(() -> findViewById(R.id.btnPin1).requestFocus());
         }
     }
 

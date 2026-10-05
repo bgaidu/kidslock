@@ -161,6 +161,8 @@ public class LockScreenActivity extends AppCompatActivity {
             layoutMain.setVisibility(View.VISIBLE);
             pinInput.setLength(0);
             updatePinDisplay();
+            // TV：返回后显式归还焦点到第一个选项
+            findViewById(R.id.btnOption1).post(() -> findViewById(R.id.btnOption1).requestFocus());
         });
     }
 
@@ -248,6 +250,8 @@ public class LockScreenActivity extends AppCompatActivity {
         layoutPin.setVisibility(View.VISIBLE);
         pinInput.setLength(0);
         updatePinDisplay();
+        // TV：可见性切换后焦点不会自动落到新面板，遥控器会失灵——显式定位到第一个数字键
+        findViewById(R.id.btnPin1).post(() -> findViewById(R.id.btnPin1).requestFocus());
     }
 
     private void onPinDigit(int digit) {
