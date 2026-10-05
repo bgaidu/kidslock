@@ -8,6 +8,12 @@
 *.apk
 *.aab
 
+# Android SDK（本地工具链，不纳入版本控制）
+/android-sdk/
+
+# APK 输出目录
+/app/build/outputs/apk/release/
+
 # Gradle
 .gradle/
 gradle-app.setting
