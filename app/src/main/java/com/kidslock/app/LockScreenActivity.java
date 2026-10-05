@@ -5,6 +5,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -13,6 +14,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,6 +56,11 @@ public class LockScreenActivity extends AppCompatActivity {
     // 替代 Android 5.1+ 已拿不到其他应用任务的 getRunningTasks）
     private static LockScreenActivity foregroundInstance;
     private boolean resumed = false;
+    // 实例创建时刻，用于给"启动中"状态设定时间上限
+    private final long startedAtElapsed = SystemClock.elapsedRealtime();
+    // 启动窗口期上限：正常冷启动远小于此值；必须大于 LockService 的
+    // LOCK_SCREEN_START_DELAY_MS(2s) + watchdog 间隔(800ms)，否则仍会出现重复拉起
+    private static final long STARTING_TIMEOUT_MS = 5000;
 
     static boolean isOnTop() {
         LockScreenActivity a = foregroundInstance;
@@ -62,16 +69,21 @@ public class LockScreenActivity extends AppCompatActivity {
 
     /**
      * 供 LockService 判断锁屏 Activity 是否正在启动过程中。
-     * 避免 watchdog 在 Activity 启动时误判为不在前台而重复启动。
+     * 必须有时间上限：实例存在但迟迟未 resumed（被系统弹窗、通知栏遮挡）时
+     * 不能永远视为"启动中"，否则 watchdog 会一直空等，彻底放弃防绕过。
      */
     static boolean isStarting() {
         LockScreenActivity a = foregroundInstance;
-        return a != null && !a.isFinishing() && !a.resumed;
+        return a != null && !a.isFinishing() && !a.resumed
+                && SystemClock.elapsedRealtime() - a.startedAtElapsed < STARTING_TIMEOUT_MS;
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 尽早登记静态引用：真正的启动窗口期（onCreate→onResume）里
+        // foregroundInstance 必须已指向本实例，isStarting() 才能生效
+        foregroundInstance = this;
         setContentView(R.layout.activity_lock_screen);
 
         pref = new PrefManager(this);
@@ -172,7 +184,7 @@ public class LockScreenActivity extends AppCompatActivity {
             correctCount++;
             optionButtons[index].setBackgroundResource(R.drawable.btn_option_correct);
             tvFeedback.setText("答对了！");
-            tvFeedback.setTextColor(getResources().getColor(R.color.correct_green));
+            tvFeedback.setTextColor(ContextCompat.getColor(this, R.color.correct_green));
             tvFeedback.setVisibility(View.VISIBLE);
 
             if (correctCount >= requiredCount) {
@@ -193,7 +205,7 @@ public class LockScreenActivity extends AppCompatActivity {
                 }
             }
             tvFeedback.setText("答错了，重新开始！");
-            tvFeedback.setTextColor(getResources().getColor(R.color.wrong_red));
+            tvFeedback.setTextColor(ContextCompat.getColor(this, R.color.wrong_red));
             tvFeedback.setVisibility(View.VISIBLE);
             handler.postDelayed(this::loadNextQuestion, 1500);
         }
@@ -212,9 +224,10 @@ public class LockScreenActivity extends AppCompatActivity {
         int minutes = pref.getWatchLimitMinutes();
         pref.startTimer(minutes);
         pref.resetPinFailures();
+        // 先关闭 Activity，再启动服务，避免竞态条件
+        finishAffinity();
         // 通知服务移除悬浮窗，服务会重新进入计时模式
         LockService.requestUnlock(this);
-        finishAffinity();
     }
 
     // ==================== 家长PIN ====================
@@ -318,6 +331,8 @@ public class LockScreenActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        // 清掉答题反馈/解锁用的延迟回调，避免在已销毁的实例上继续执行
+        handler.removeCallbacksAndMessages(null);
         if (foregroundInstance == this) foregroundInstance = null;
     }
 

@@ -107,7 +107,7 @@ public class LockService extends Service {
         // 解锁指令：原来写在已废弃的 onStart() 里（Android 2.0 起不再回调），永远不执行
         if (intent != null && ACTION_UNLOCK.equals(intent.getAction())) {
             unlockAndStop();
-            return START_NOT_STICKY;
+            return START_STICKY;  // 修复：返回 START_STICKY，让服务保持运行
         }
 
         // 已锁屏 → 进入锁屏守护模式
@@ -141,6 +141,13 @@ public class LockService extends Service {
     // ==================== 计时模式 ====================
 
     private void startTicking() {
+        // 先移除旧的计时循环：onStartCommand 每次收到 start 指令都会走到这里
+        // （如家长连点"开始计时"），不清理会叠加多个循环导致时间成倍速扣减，
+        // 且旧 Runnable 的引用已被覆盖、永远无法 removeCallbacks
+        if (tickRunnable != null) {
+            handler.removeCallbacks(tickRunnable);
+            tickRunnable = null;
+        }
         // 服务重启/开机时对账：只扣"服务死了但屏幕亮着"的时间（详见 PrefManager.deductOfflineIfAny）
         pref.deductOfflineIfAny();
         remainingMillis = pref.getRemainingMillis();
@@ -288,13 +295,12 @@ public class LockService extends Service {
                             ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                             : WindowManager.LayoutParams.TYPE_PHONE,
                     // 悬浮窗可聚焦，拦截 TV 遥控器焦点
-                    // 移除 FLAG_DIM_BEHIND，避免遮挡背后的锁屏 Activity
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+                    WindowManager.LayoutParams.FLAG_DIM_BEHIND
+                            | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
                             | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                     PixelFormat.TRANSLUCENT
             );
             params.gravity = Gravity.TOP | Gravity.START;
-            params.dimAmount = 0.7f;
             windowManager.addView(overlayView, params);
             Log.i(TAG, "Overlay shown");
         } catch (Exception e) {
@@ -325,7 +331,7 @@ public class LockService extends Service {
         hideOverlay();
         
         // 延迟启动 Activity，确保悬浮窗完全移除
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+        handler.postDelayed(() -> {
             Intent lockIntent = new Intent(this, LockScreenActivity.class);
             lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             try {
@@ -333,7 +339,7 @@ public class LockService extends Service {
             } catch (Exception e) {
                 Log.e(TAG, "Start LockScreenActivity failed", e);
             }
-        }, 100);
+        }, 300);
     }
 
     /**
@@ -348,12 +354,16 @@ public class LockService extends Service {
     private void unlockAndStop() {
         pref.setLocked(false);
         pref.setHomeAliasEnabled(this, false);
-        // 解锁后自动重新开始计时
-        int minutes = pref.getWatchLimitMinutes();
-        pref.startTimer(minutes);
         pref.resetPinFailures();
         hideOverlay();
-        // 重新开始计时模式（不停止服务）
+        // 必须先停掉守护循环：否则它下一轮检测到"已解锁"会 stopSelf，
+        // 把下面刚重启的计时循环一并杀掉，解锁后计时就停摆了
+        if (watchdogRunnable != null) {
+            handler.removeCallbacks(watchdogRunnable);
+            watchdogRunnable = null;
+        }
+        // 计时已在 LockScreenActivity.unlock() 里通过 startTimer 重置，
+        // 这里只负责恢复计时模式（不停止服务）
         startTicking();
     }
 
