@@ -221,39 +221,28 @@ public class LockService extends Service {
                     return;
                 }
 
-                // 如果锁屏 Activity 已经在前台，不需要操作
-                if (isLockScreenOnTop()) {
+                if (LockScreenActivity.isOnTop()) {
+                    // 锁屏界面确认在前台：悬浮窗不再需要，移除以免遮挡答题界面
+                    hideOverlay();
                     handler.postDelayed(this, 800);
                     return;
                 }
 
-                // 如果锁屏 Activity 正在启动中，等待它完成
-                long timeSinceStart = SystemClock.elapsedRealtime() - lastLockScreenStartTime;
-                if (lastLockScreenStartTime > 0 && timeSinceStart < LOCK_SCREEN_START_DELAY_MS) {
-                    Log.d(TAG, "Lock screen activity starting, waiting...");
-                    handler.postDelayed(this, 800);
-                    return;
-                }
-
-                // 尝试拉起锁屏 Activity
-                Log.i(TAG, "Lock screen not on top, trying to pull");
-                startLockScreenActivity();
-
-                // 悬浮窗应该一直显示，防止被桌面覆盖
+                // 锁屏界面未确认在前台：无论它是在启动中，还是被系统拦截
+                // （实测小米 TV 会拦截排队后台拉起，数秒后才放行），都必须先把
+                // 悬浮窗顶上去拦截输入，桌面不能裸露。悬浮窗自身可点击/按键拉起锁屏。
                 showOverlayIfPermitted();
+
+                // 仅在没有待完成的启动尝试时才再次拉起，避免叠加重复的 startActivity
+                if (!LockScreenActivity.isStarting()) {
+                    Log.i(TAG, "Lock screen not on top, trying to pull");
+                    startLockScreenActivity();
+                }
 
                 handler.postDelayed(this, 800);
             }
         };
         handler.post(watchdogRunnable);
-    }
-
-    private boolean isLockScreenOnTop() {
-        // getRunningTasks 在 Android 5.1+ 只返回自己的任务，无法判断真实前台；
-        // 改用同进程静态引用跟踪（见 LockScreenActivity.isOnTop）
-        if (LockScreenActivity.isOnTop()) return true;
-        // 如果 Activity 正在启动但还没 resumed，也认为它在前台（避免 watchdog 重复启动）
-        return LockScreenActivity.isStarting();
     }
 
     // ==================== 悬浮窗覆盖层 ====================
@@ -262,23 +251,13 @@ public class LockService extends Service {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this);
     }
 
-    // 记录上次启动锁屏 Activity 的时间，避免 watchdog 立即显示悬浮窗遮挡
-    private long lastLockScreenStartTime = 0;
-    private static final long LOCK_SCREEN_START_DELAY_MS = 2000;
-
     /**
-     * 显示全屏悬浮窗覆盖层。锁屏状态下只要权限已开就一直显示，
+     * 显示全屏悬浮窗覆盖层。锁屏状态下只要锁屏界面未确认在前台就一直显示，
      * 拦截孩子的所有触摸/按键操作，引导回到锁屏界面。
      */
     private void showOverlayIfPermitted() {
         if (!canDrawOverlays()) {
             Log.d(TAG, "Overlay permission not granted, skip overlay");
-            return;
-        }
-        // 如果锁屏 Activity 刚启动，延迟显示悬浮窗，避免遮挡
-        long timeSinceStart = SystemClock.elapsedRealtime() - lastLockScreenStartTime;
-        if (lastLockScreenStartTime > 0 && timeSinceStart < LOCK_SCREEN_START_DELAY_MS) {
-            Log.d(TAG, "Lock screen activity just started, delay overlay");
             return;
         }
         if (overlayView != null) {
@@ -320,17 +299,11 @@ public class LockService extends Service {
     }
 
     /**
-     * 从悬浮窗点击/按键等用户交互场景启动锁屏 Activity。
-     * 先移除悬浮窗，确保锁屏 Activity 能正常显示在前台。
+     * 拉起锁屏 Activity。悬浮窗的移除由 watchdog 在确认锁屏界面真正到前台后
+     * 处理；这里不先移除悬浮窗——在系统拦截后台 Activity 启动的设备上
+     * （如小米 TV），启动可能被延迟数秒，期间必须靠悬浮窗拦截输入。
      */
     private void startLockScreenActivity() {
-        // 记录启动时间，让 watchdog 延迟显示悬浮窗
-        lastLockScreenStartTime = SystemClock.elapsedRealtime();
-        
-        // 先移除悬浮窗，避免遮挡锁屏 Activity
-        hideOverlay();
-        
-        // 延迟启动 Activity，确保悬浮窗完全移除
         handler.postDelayed(() -> {
             Intent lockIntent = new Intent(this, LockScreenActivity.class);
             lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);

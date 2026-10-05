@@ -58,8 +58,9 @@ public class LockScreenActivity extends AppCompatActivity {
     private boolean resumed = false;
     // 实例创建时刻，用于给"启动中"状态设定时间上限
     private final long startedAtElapsed = SystemClock.elapsedRealtime();
-    // 启动窗口期上限：正常冷启动远小于此值；必须大于 LockService 的
-    // LOCK_SCREEN_START_DELAY_MS(2s) + watchdog 间隔(800ms)，否则仍会出现重复拉起
+    // 启动窗口期上限：必须明显大于 watchdog 间隔(800ms)与锁屏 Activity 的正常
+    // 启动耗时，避免重复拉起；又不能太大——被系统长时间遮挡时，超时后
+    // watchdog 要能接管（重新拉起 + 显示悬浮窗）
     private static final long STARTING_TIMEOUT_MS = 5000;
 
     static boolean isOnTop() {
@@ -85,6 +86,16 @@ public class LockScreenActivity extends AppCompatActivity {
         // foregroundInstance 必须已指向本实例，isStarting() 才能生效
         foregroundInstance = this;
         setContentView(R.layout.activity_lock_screen);
+
+        // 确保守护服务在运行：MIUI 等系统会拦截开机广播（实测小米 TV 收不到
+        // BOOT_COMPLETED），锁屏状态下重启后服务不会自启；只要锁屏界面被打开
+        // （此处是前台 Activity，启动服务不受后台限制），守护即自愈恢复。
+        Intent serviceIntent = new Intent(this, LockService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
 
         pref = new PrefManager(this);
         bank = new CharacterBank();

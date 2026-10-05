@@ -5,10 +5,18 @@
     android:background="@color/lock_bg">
 
     <!-- ===================== 认字主界面 ===================== -->
+    <!-- ScrollView 防止小屏电视上底部控件（进度/家长解锁）被裁切到屏幕外；
+         D-pad 焦点移动时 ScrollView 会自动滚动到焦点控件 -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
     <LinearLayout
         android:id="@+id/layoutMain"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:orientation="vertical"
         android:gravity="center"
         android:padding="@dimen/tv_margin_h">
@@ -146,6 +154,8 @@
             android:clickable="true" />
 
     </LinearLayout>
+
+    </ScrollView>
 
     <!-- ===================== PIN 输入界面 ===================== -->
     <LinearLayout
