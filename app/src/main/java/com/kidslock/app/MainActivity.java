@@ -104,6 +104,12 @@ public class MainActivity extends AppCompatActivity {
             finish();
             return;
         }
+        // 计时进行中但服务不在运行（实测 MIUI 熄屏会杀后台进程）：拉起服务恢复计时。
+        // 服务启动后 deductOfflineIfAny 会扣除服务死亡期间屏幕亮着的时间，
+        // 剩余时间归零则立即触发锁屏。此处是前台 Activity，启动服务不受后台限制。
+        if (pref.isTimerActive()) {
+            startLockService();
+        }
         // 先移除旧的，避免快速切回时重复 post 多个 Runnable
         handler.removeCallbacks(updateRunnable);
         handler.post(updateRunnable);
