@@ -31,7 +31,8 @@
             android:textColor="@color/text_primary"
             android:textSize="@dimen/text_hanzi"
             android:textStyle="bold"
-            android:layout_marginVertical="@dimen/spacing_medium" />
+            android:layout_marginTop="@dimen/spacing_medium"
+            android:layout_marginBottom="@dimen/spacing_medium" />
 
         <!-- 提问 -->
         <TextView
@@ -48,7 +49,8 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:layout_marginHorizontal="@dimen/tv_margin_h">
+            android:layout_marginLeft="@dimen/tv_margin_h"
+            android:layout_marginRight="@dimen/tv_margin_h">
 
             <Button
                 android:id="@+id/btnOption1"
@@ -137,7 +139,8 @@
             android:textColor="@color/text_secondary"
             android:textSize="@dimen/text_body"
             android:background="@drawable/btn_settings_bg"
-            android:paddingHorizontal="@dimen/spacing_medium"
+            android:paddingStart="@dimen/spacing_medium"
+            android:paddingEnd="@dimen/spacing_medium"
             android:layout_marginTop="@dimen/spacing_large"
             android:focusable="true"
             android:clickable="true" />

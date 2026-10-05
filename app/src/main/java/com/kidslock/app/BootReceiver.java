@@ -55,6 +55,9 @@ public class BootReceiver extends BroadcastReceiver {
                 pref.setLocked(true);
                 pref.setHomeAliasEnabled(context, true);
                 pref.stopTimer();
+                // 与下方"已锁定"分支一致：开机时从广播里启动 Activity 可能被
+                // Android 10+ 的后台启动限制拦截，必须有守护服务兜底
+                startLockService(context);
                 Intent lockIntent = new Intent(context, LockScreenActivity.class);
                 lockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                         | Intent.FLAG_ACTIVITY_CLEAR_TASK);

@@ -1,8 +1,10 @@
 package com.kidslock.app;
 
+import android.Manifest;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -16,6 +18,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 /**
  * 设置主界面。
@@ -23,6 +27,8 @@ import androidx.appcompat.app.AppCompatActivity;
  * 还可以开始/停止计时、立即锁屏、查看剩余时间。
  */
 public class MainActivity extends AppCompatActivity {
+
+    private static final int REQ_POST_NOTIFICATIONS = 1001;
 
     private PrefManager pref;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -57,9 +63,24 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(R.layout.activity_main);
 
+        requestNotificationPermissionIfNeeded();
+
         initViews();
         setupListeners();
         updateStatus();
+    }
+
+    /**
+     * Android 13+ 通知需要运行时权限，不授予则前台服务的倒计时通知不可见。
+     */
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                        != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQ_POST_NOTIFICATIONS);
+        }
     }
 
     @Override
@@ -141,6 +162,12 @@ public class MainActivity extends AppCompatActivity {
 
         // 停止计时
         findViewById(R.id.btnStopTimer).setOnClickListener(v -> {
+            // 若仍处于锁定状态（正常 UI 流程进不到这里），顺带解除锁定，
+            // 让"停止计时"始终是家长可用的逃生通道
+            if (pref.isLocked()) {
+                pref.setLocked(false);
+                pref.setHomeAliasEnabled(this, false);
+            }
             pref.stopTimer();
             stopService(new Intent(this, LockService.class));
             toast("计时已停止");
@@ -215,16 +242,16 @@ public class MainActivity extends AppCompatActivity {
         // 状态
         if (pref.isLocked()) {
             tvStatus.setText("当前状态：已锁屏");
-            tvStatus.setTextColor(getResources().getColor(R.color.wrong_red));
+            tvStatus.setTextColor(ContextCompat.getColor(this, R.color.wrong_red));
             tvRemaining.setText("请答题解锁");
         } else if (pref.isTimerActive()) {
             long remaining = pref.getRemainingMillis();
             if (remaining <= 0) {
                 tvStatus.setText("当前状态：时间到");
-                tvStatus.setTextColor(getResources().getColor(R.color.wrong_red));
+                tvStatus.setTextColor(ContextCompat.getColor(this, R.color.wrong_red));
             } else {
                 tvStatus.setText("当前状态：计时中");
-                tvStatus.setTextColor(getResources().getColor(R.color.correct_green));
+                tvStatus.setTextColor(ContextCompat.getColor(this, R.color.correct_green));
                 long totalSec = remaining / 1000;
                 long min = totalSec / 60;
                 long sec = totalSec % 60;
@@ -232,7 +259,7 @@ public class MainActivity extends AppCompatActivity {
             }
         } else {
             tvStatus.setText("当前状态：未计时");
-            tvStatus.setTextColor(getResources().getColor(R.color.text_secondary));
+            tvStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
             tvRemaining.setText("");
         }
     }
