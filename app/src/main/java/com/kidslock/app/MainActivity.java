@@ -39,6 +39,14 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvWatchTime;
     private TextView tvUnlockCount;
 
+    // 家长 PIN 门禁：设置页每次进入（含从后台返回）都要求重新验证，
+    // 否则孩子从桌面打开应用就能改参数、停计时
+    private View layoutSettings;
+    private View layoutGate;
+    private TextView tvGatePinDisplay;
+    private final StringBuilder gatePinInput = new StringBuilder();
+    private boolean gateVerified = false;
+
     private final Runnable updateRunnable = new Runnable() {
         @Override
         public void run() {
@@ -68,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
         initViews();
         setupListeners();
         updateStatus();
+        applyGate();
     }
 
     /**
@@ -98,12 +107,16 @@ public class MainActivity extends AppCompatActivity {
         // 先移除旧的，避免快速切回时重复 post 多个 Runnable
         handler.removeCallbacks(updateRunnable);
         handler.post(updateRunnable);
+        // 从后台/其他界面返回时重新验证 PIN（onPause 已清除验证标记）
+        applyGate();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         handler.removeCallbacks(updateRunnable);
+        // 离开界面即失效，下次进入需重新输入 PIN
+        gateVerified = false;
     }
 
     private void initViews() {
@@ -112,6 +125,88 @@ public class MainActivity extends AppCompatActivity {
         btnAutoStart = findViewById(R.id.btnAutoStart);
         tvWatchTime = findViewById(R.id.tvWatchTime);
         tvUnlockCount = findViewById(R.id.tvUnlockCount);
+
+        // 家长 PIN 门禁（与锁屏界面共用 view_pin_pad 面板）
+        layoutSettings = findViewById(R.id.settingsScroll);
+        layoutGate = findViewById(R.id.layoutGate);
+        tvGatePinDisplay = findViewById(R.id.tvPinDisplay);
+
+        int[] gatePinButtonIds = {
+                R.id.btnPin0, R.id.btnPin1, R.id.btnPin2, R.id.btnPin3,
+                R.id.btnPin4, R.id.btnPin5, R.id.btnPin6, R.id.btnPin7,
+                R.id.btnPin8, R.id.btnPin9
+        };
+        for (int i = 0; i <= 9; i++) {
+            final int digit = i;
+            findViewById(gatePinButtonIds[i]).setOnClickListener(v -> onGatePinDigit(digit));
+        }
+        findViewById(R.id.btnPinClear).setOnClickListener(v -> {
+            gatePinInput.setLength(0);
+            updateGatePinDisplay();
+        });
+        findViewById(R.id.btnPinBack).setOnClickListener(v -> {
+            // 门禁界面没有可返回的上一屏，等同清除重输
+            gatePinInput.setLength(0);
+            updateGatePinDisplay();
+        });
+    }
+
+    // ==================== 家长 PIN 门禁 ====================
+
+    /** 按验证状态切换"门禁 / 设置页"的可见性 */
+    private void applyGate() {
+        gatePinInput.setLength(0);
+        updateGatePinDisplay();
+        if (gateVerified) {
+            layoutGate.setVisibility(View.GONE);
+            layoutSettings.setVisibility(View.VISIBLE);
+        } else {
+            layoutGate.setVisibility(View.VISIBLE);
+            layoutSettings.setVisibility(View.GONE);
+        }
+    }
+
+    private void onGatePinDigit(int digit) {
+        if (gatePinInput.length() < 4) {
+            gatePinInput.append(digit);
+            updateGatePinDisplay();
+            if (gatePinInput.length() == 4) {
+                handler.postDelayed(this::checkGatePin, 200);
+            }
+        }
+    }
+
+    private void checkGatePin() {
+        if (pref.isPinLocked()) {
+            long remainingSec = pref.getPinLockRemainingMillis() / 1000;
+            toast("尝试次数过多，请 " + remainingSec + " 秒后再试");
+            gatePinInput.setLength(0);
+            updateGatePinDisplay();
+            return;
+        }
+        if (pref.verifyPin(gatePinInput.toString())) {
+            pref.resetPinFailures();
+            gateVerified = true;
+            applyGate();
+        } else {
+            pref.recordPinFailure();
+            toast("PIN码错误");
+            gatePinInput.setLength(0);
+            updateGatePinDisplay();
+        }
+    }
+
+    private void updateGatePinDisplay() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 4; i++) {
+            if (i < gatePinInput.length()) {
+                sb.append("●");
+            } else {
+                sb.append("○");
+            }
+            if (i < 3) sb.append("  ");
+        }
+        tvGatePinDisplay.setText(sb.toString());
     }
 
     private void setupListeners() {
