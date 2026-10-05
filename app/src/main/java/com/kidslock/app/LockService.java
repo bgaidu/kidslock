@@ -1,5 +1,6 @@
 package com.kidslock.app;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -103,6 +104,10 @@ public class LockService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         startForeground(NOTIFICATION_ID, buildNotification(pref.getRemainingMillis()));
+        // MIUI TV 会拒绝 startForeground（日志 "not allow become forceground"），
+        // 被拒时传入的通知不会上架，通知栏残留上一个进程的过期内容；
+        // 用普通 notify 再发一次（发通知不受前台服务限制），保证状态可见
+        updateNotification();
 
         // 解锁指令：原来写在已废弃的 onStart() 里（Android 2.0 起不再回调），永远不执行
         if (intent != null && ACTION_UNLOCK.equals(intent.getAction())) {
@@ -151,6 +156,11 @@ public class LockService extends Service {
         // 服务重启/开机时对账：只扣"服务死了但屏幕亮着"的时间（详见 PrefManager.deductOfflineIfAny）
         pref.deductOfflineIfAny();
         remainingMillis = pref.getRemainingMillis();
+        // 挂系统级到期闹钟：进程被杀后 AlarmManager 仍会在"剩余时间走完"的时刻
+        // 唤醒 AlarmReceiver 恢复守护并触发锁屏，堵住"服务死了没人锁屏"的洞。
+        // 闹钟基线用 ELAPSED_REALTIME_WAKEUP（随设备休眠暂停），与熄屏暂停计时的语义一致；
+        // 若闹钟因熄屏提前触发，AlarmReceiver 拉起服务后这里会按新的剩余时间重新调度。
+        scheduleExpiryAlarm(this, remainingMillis);
         lastTickElapsed = SystemClock.elapsedRealtime();
         persistCountdown = 0;
         tickRunnable = new Runnable() {
@@ -188,10 +198,12 @@ public class LockService extends Service {
         pref.setLocked(true);
         pref.setHomeAliasEnabled(this, true);
         pref.stopTimer();
+        // 通知立即切换为"设备已锁定"（stopTimer 后剩余为 0，不能留旧倒计时）
+        updateNotification();
 
         // 优先显示悬浮窗（立即拦截操作）
         showOverlayIfPermitted();
-        
+
         // 同时尝试拉起锁屏 Activity（某些设备允许）
         startLockScreenActivity();
 
@@ -200,6 +212,33 @@ public class LockService extends Service {
     }
 
     // ==================== 锁屏守护模式 ====================
+
+    /** 请求码，与通知的 PendingIntent 区分开 */
+    private static final int ALARM_REQUEST_CODE = 2001;
+
+    /**
+     * 调度"剩余时间走完"的系统闹钟（进程死亡后仍会触发）。
+     * 优先精确闹钟；新系统没有 SCHEDULE_EXACT_ALARM 权限时退化为非精确
+     * （可能晚几分钟，但绝不会不触发）。
+     */
+    static void scheduleExpiryAlarm(Context context, long remainingMillis) {
+        if (remainingMillis <= 0) return;
+        AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+        Intent intent = new Intent(context, AlarmReceiver.class)
+                .setAction(AlarmReceiver.ACTION_TIMER_CHECK);
+        PendingIntent pi = PendingIntent.getBroadcast(
+                context, ALARM_REQUEST_CODE, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        long triggerAt = SystemClock.elapsedRealtime() + remainingMillis;
+        try {
+            am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
+            Log.i(TAG, "Expiry alarm scheduled in " + (remainingMillis / 1000) + "s");
+        } catch (SecurityException e) {
+            am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
+            Log.w(TAG, "Exact alarm denied, using inexact", e);
+        }
+    }
 
     private void startWatchdog() {
         if (tickRunnable != null) {

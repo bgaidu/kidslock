@@ -80,6 +80,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- 计时到期闹钟：进程被系统杀死后，靠 AlarmManager 在到点时刻唤醒并恢复守护 -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
         <!-- Timer Service -->
         <service
             android:name=".LockService"
