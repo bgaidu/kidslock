@@ -52,6 +52,11 @@ public class LockService extends Service {
     private int persistCountdown;
     private static final int PERSIST_EVERY_TICKS = 5;   // 每 5 秒持久化一次
 
+    // 无障碍守护自检限频：读 Settings.Secure 是跨进程调用，计时/守护循环高频
+    // （1s/800ms）轮询不能每轮都读，15 秒一轮足够快（设置被清的最坏恢复延迟）
+    private long lastGuardianCheckElapsed;
+    private static final long GUARDIAN_CHECK_INTERVAL_MS = 15_000;
+
     private PrefManager pref;
     private Handler handler;
     private Runnable tickRunnable;
@@ -179,6 +184,7 @@ public class LockService extends Service {
                     showOverlayIfPermitted();
                     return;
                 }
+                ensureAccessibilityGuardian();
                 long now = SystemClock.elapsedRealtime();
                 long dt = now - lastTickElapsed;
                 lastTickElapsed = now;
@@ -284,6 +290,24 @@ public class LockService extends Service {
         }
     }
 
+    /**
+     * 自愈无障碍守护：设置被用户/系统清掉（如 ROM 清理、家长助手类应用）时写回。
+     * 仅在进程活着且本服务在跑时有效——真机（荣耀 MagicOS）实测过设置被清且进程
+     * 死亡后无人恢复的场景，本方法补上"进程活着"这一半；进程死了的另一半由
+     * RecoveryAccessibilityService 绑定即自检 + AlarmReceiver 覆盖。
+     * 未持有 WRITE_SECURE_SETTINGS 的设备（未 adb 授权）trySelfEnable 内部会
+     * 静默跳过，对电视端无副作用。
+     */
+    private void ensureAccessibilityGuardian() {
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastGuardianCheckElapsed < GUARDIAN_CHECK_INTERVAL_MS) return;
+        lastGuardianCheckElapsed = now;
+        if (!RecoveryAccessibilityService.isServiceEnabled(this)) {
+            Log.w(TAG, "Accessibility guardian missing from settings, self-enabling");
+            RecoveryAccessibilityService.trySelfEnable(this);
+        }
+    }
+
     private void startWatchdog() {
         if (tickRunnable != null) {
             handler.removeCallbacks(tickRunnable);
@@ -303,6 +327,7 @@ public class LockService extends Service {
                     stopSelf();
                     return;
                 }
+                ensureAccessibilityGuardian();
 
                 if (LockScreenActivity.isOnTop()) {
                     // 锁屏界面确认在前台：正常收起悬浮窗以免遮挡答题界面；
